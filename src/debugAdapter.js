@@ -47,6 +47,11 @@ class MSXDebugSession extends DebugSession {
     response.body = {
       supportsConfigurationDoneRequest: true,
       supportsEvaluateForHovers: true,
+      supportsSetVariable: false,
+      supportsStepBack: false,
+      supportsDataBreakpoints: false,
+      supportsConditionalBreakpoints: false,
+      setBreakpoint: true,
     };
 
     this.sendResponse(response);
@@ -106,6 +111,22 @@ class MSXDebugSession extends DebugSession {
 
     log("openMSX started");
 
+    //--------------------------------------------------
+    // openMSX events
+    //--------------------------------------------------
+
+    this.msx.on("breakpointHit", (info) => {
+      log(`Breakpoint event received id=${info.id}`);
+
+      this.sendEvent(new StoppedEvent("breakpoint", this.threadId));
+    });
+
+    this.msx.on("paused", () => {
+      log("Pause event received");
+
+      this.sendEvent(new StoppedEvent("pause", this.threadId));
+    });
+
     this.sendResponse(response);
   }
 
@@ -125,7 +146,7 @@ class MSXDebugSession extends DebugSession {
   // BREAKPOINTS
   //--------------------------------------------------
 
-  setBreakPointsRequest(response, args) {
+  async setBreakPointsRequest(response, args) {
     const source = args.source.path;
 
     const breakpoints = [];
@@ -136,7 +157,7 @@ class MSXDebugSession extends DebugSession {
       const addr = this.cdb.getAddressForLine(line);
 
       if (addr !== null) {
-        this.msx.setBreakpoint(addr);
+        await this.msx.setBreakpoint(addr);
 
         breakpoints.push({
           verified: true,

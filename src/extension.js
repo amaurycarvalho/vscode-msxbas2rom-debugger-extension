@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require("fs");
 
 const { DebugAdapterExecutable } = require("vscode");
+const { MSXBasicSemanticTokensProvider, legend } = require("./semanticTokens");
 
 const log = vscode.window.createOutputChannel("MSX Debugger");
 
@@ -16,6 +17,20 @@ function logMsg(msg) {
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
+  //--------------------------------------------------
+  // Semantic tokens provider registration
+  //--------------------------------------------------
+
+  const selector = { language: "msx-basic" };
+
+  context.subscriptions.push(
+    vscode.languages.registerDocumentSemanticTokensProvider(
+      selector,
+      new MSXBasicSemanticTokensProvider(),
+      legend,
+    ),
+  );
+
   //--------------------------------------------------
   // Debug Adapter registration
   //--------------------------------------------------

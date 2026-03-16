@@ -2,6 +2,13 @@
 
 const { spawn } = require("child_process");
 const EventEmitter = require("events");
+const fs = require("fs");
+
+const LOG_FILE = "/tmp/msx-debug.log";
+
+function log(msg) {
+  fs.appendFileSync(LOG_FILE, `[openMSX] ${msg}\n`);
+}
 
 class OpenMSXControl extends EventEmitter {
   constructor(openmsxPath, romPath) {
@@ -17,12 +24,16 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   start() {
-    console.log("Launching openMSX:", this.openmsxPath, this.romPath);
+    log(`Launching openMSX: ${this.openmsxPath} ${this.romPath}`);
+
     return new Promise((resolve, reject) => {
       const parts = this.openmsxPath.split(" ");
 
       const cmd = parts[0];
       const args = parts.slice(1);
+
+      log(`spawn cmd: ${cmd}`);
+      log(`spawn args: ${JSON.stringify(args)}`);
 
       this.proc = spawn(cmd, [
         ...args,
@@ -33,22 +44,28 @@ class OpenMSXControl extends EventEmitter {
       ]);
 
       this.proc.stdout.on("data", (data) => {
-        this._onData(data.toString());
+        const text = data.toString();
+        log(`stdout: ${text.trim()}`);
+        this._onData(text);
       });
 
       this.proc.stderr.on("data", (data) => {
-        console.error("openMSX:", data.toString());
+        const text = data.toString();
+        log(`stderr: ${text.trim()}`);
       });
 
-      this.proc.on("close", () => {
+      this.proc.on("close", (code) => {
+        log(`openMSX closed with code ${code}`);
         this.emit("close");
       });
 
       this.proc.on("error", (err) => {
+        log(`spawn error: ${err}`);
         reject(err);
       });
 
       this.once("output", () => {
+        log("openMSX control channel ready");
         resolve();
       });
     });
@@ -61,19 +78,65 @@ class OpenMSXControl extends EventEmitter {
   _onData(data) {
     this.buffer += data;
 
-    if (!this.buffer.includes("</openmsx-output>")) return;
+    if (!this.buffer.includes("<openmsx-output>")) return;
 
     const output = this.buffer;
     this.buffer = "";
+
+    log(`XML packet received`);
+
+    //--------------------------------------------------
+    // reply handler (command responses)
+    //--------------------------------------------------
 
     const replyMatch = output.match(/<reply[^>]*>([\s\S]*?)<\/reply>/);
 
     if (replyMatch) {
       const result = replyMatch[1];
 
+      log(`reply: ${result}`);
+
       if (this.currentResolve) {
         this.currentResolve(result);
         this.currentResolve = null;
+      }
+    }
+
+    //--------------------------------------------------
+    // notify handler (events)
+    //--------------------------------------------------
+
+    const notifyMatch = output.match(/<notify>([\s\S]*?)<\/notify>/);
+
+    if (notifyMatch) {
+      const notify = notifyMatch[1];
+
+      log(`notify: ${notify}`);
+
+      //--------------------------------------------------
+      // breakpoint hit
+      //--------------------------------------------------
+
+      if (notify.includes("breakpoint")) {
+        const idMatch = notify.match(/id="(\d+)"/);
+
+        const id = idMatch ? parseInt(idMatch[1]) : null;
+
+        log(`Breakpoint HIT id=${id}`);
+
+        this.emit("breakpointHit", {
+          id,
+        });
+      }
+
+      //--------------------------------------------------
+      // CPU break (manual pause)
+      //--------------------------------------------------
+
+      if (notify.includes("break")) {
+        log(`CPU break event`);
+
+        this.emit("paused");
       }
     }
 
@@ -90,6 +153,8 @@ class OpenMSXControl extends EventEmitter {
 
       const cmd = `<command>${command}</command>\n`;
 
+      log(`SEND: ${command}`);
+
       this.proc.stdin.write(cmd);
     });
   }
@@ -99,14 +164,17 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   async continue() {
+    log("continue");
     await this.send("debug cont");
   }
 
   async break() {
+    log("break");
     await this.send("debug break");
   }
 
   async step() {
+    log("step");
     await this.send("debug step");
   }
 
@@ -115,12 +183,24 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   async setBreakpoint(address) {
+    log(`setBreakpoint ${address}`);
+
     const cmd = `debug set_bp ${address}`;
 
-    return await this.send(cmd);
+    const result = await this.send(cmd);
+
+    const idMatch = result.match(/id\s*=\s*(\d+)/);
+
+    const id = idMatch ? parseInt(idMatch[1]) : null;
+
+    log(`Breakpoint created id=${id}`);
+
+    return id;
   }
 
   async removeBreakpoint(id) {
+    log(`removeBreakpoint ${id}`);
+
     const cmd = `debug remove_bp ${id}`;
 
     return await this.send(cmd);
@@ -131,6 +211,8 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   async readMemory(address, size) {
+    log(`readMemory addr=${address} size=${size}`);
+
     const cmd = `debug read_block memory ${address} ${size}`;
 
     const result = await this.send(cmd);
@@ -185,6 +267,8 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   stop() {
+    log("Stopping openMSX");
+
     if (this.proc) this.proc.kill();
   }
 }

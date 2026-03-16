@@ -5,6 +5,12 @@
 
 const fs = require("fs");
 
+const LOG_FILE = "/tmp/msx-debug.log";
+
+function log(msg) {
+  fs.appendFileSync(LOG_FILE, `[CDB] ${msg}\n`);
+}
+
 class CDBParser {
   constructor(path) {
     this.path = path;
@@ -14,7 +20,11 @@ class CDBParser {
     this.symbols = {}; // raw symbols
     this.types = {}; // type definitions
 
+    log(`Opening CDB file: ${path}`);
+
     const text = fs.readFileSync(path, "utf8");
+
+    log(`CDB file loaded (${text.length} bytes)`);
 
     this.parse(text);
   }
@@ -22,13 +32,14 @@ class CDBParser {
   parse(text) {
     const rows = text.split(/\r?\n/);
 
+    log(`Parsing ${rows.length} rows`);
+
     let lastSymbol = null;
 
     for (const r of rows) {
       const line = r.trim();
 
       if (line.length === 0) continue;
-
       if (line.startsWith(";")) continue;
 
       //----------------------------------
@@ -44,6 +55,8 @@ class CDBParser {
           this.types[typeName] = {
             name: typeName,
           };
+
+          log(`Type detected: ${typeName}`);
         }
 
         continue;
@@ -64,6 +77,8 @@ class CDBParser {
           type: null,
         };
 
+        log(`Symbol: ${symbol}`);
+
         //----------------------------------
         // detect variable
         //----------------------------------
@@ -76,6 +91,8 @@ class CDBParser {
             address: null,
             type: this.extractType(symbol),
           };
+
+          log(`Variable detected: ${name} (${this.variables[name].type})`);
         }
 
         continue;
@@ -99,6 +116,8 @@ class CDBParser {
 
         this.symbols[symbol].address = addr;
 
+        log(`Address: ${symbol} -> 0x${addr.toString(16)}`);
+
         //----------------------------------
         // BASIC lines
         //----------------------------------
@@ -110,6 +129,8 @@ class CDBParser {
             const lineNumber = parseInt(match[1]);
 
             this.lines[lineNumber] = addr;
+
+            log(`BASIC line ${lineNumber} -> 0x${addr.toString(16)}`);
           }
         }
 
@@ -122,12 +143,19 @@ class CDBParser {
 
           if (this.variables[name]) {
             this.variables[name].address = addr;
+
+            log(`Variable address: ${name} -> 0x${addr.toString(16)}`);
           }
         }
 
         continue;
       }
     }
+
+    log(`Parse complete`);
+    log(`Total symbols: ${Object.keys(this.symbols).length}`);
+    log(`Total variables: ${Object.keys(this.variables).length}`);
+    log(`Total BASIC lines: ${Object.keys(this.lines).length}`);
   }
 
   //----------------------------------
@@ -146,9 +174,7 @@ class CDBParser {
 
   extractType(symbol) {
     if (symbol.includes("SI")) return "int16";
-
     if (symbol.includes("PSTR")) return "pstring";
-
     if (symbol.includes("F24")) return "float24";
 
     //----------------------------------
@@ -156,9 +182,7 @@ class CDBParser {
     //----------------------------------
 
     if (symbol.includes("%")) return "int16";
-
     if (symbol.includes("$")) return "pstring";
-
     if (symbol.includes("!")) return "float24";
 
     return "unknown";
@@ -169,18 +193,30 @@ class CDBParser {
   //----------------------------------
 
   getAddressForLine(line) {
-    return this.lines[line] || null;
+    const addr = this.lines[line] || null;
+
+    log(`getAddressForLine(${line}) -> ${addr}`);
+
+    return addr;
   }
 
   getVariable(name) {
-    return this.variables[name] || null;
+    const v = this.variables[name] || null;
+
+    log(`getVariable(${name}) -> ${v ? "found" : "null"}`);
+
+    return v;
   }
 
   getVariables() {
+    log(`getVariables() -> ${Object.keys(this.variables).length} vars`);
+
     return this.variables;
   }
 
   getLines() {
+    log(`getLines() -> ${Object.keys(this.lines).length} lines`);
+
     return this.lines;
   }
 }

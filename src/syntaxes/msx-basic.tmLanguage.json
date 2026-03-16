@@ -1,0 +1,25 @@
+{
+  "scopeName": "source.msx-basic",
+  "patterns": [
+    {
+      "match": "^\\s*[0-9]+",
+      "name": "constant.numeric.line-number.basic"
+    },
+    {
+      "match": "\\b(PRINT|IF|THEN|ELSE|FOR|NEXT|GOTO|GOSUB|RETURN|DIM|INPUT)\\b",
+      "name": "keyword.control.basic"
+    },
+    {
+      "match": "\"[^\"]*\"",
+      "name": "string.quoted.double.basic"
+    },
+    {
+      "match": "\\b[0-9]+\\b",
+      "name": "constant.numeric.basic"
+    },
+    {
+      "match": "' .*",
+      "name": "comment.line.basic"
+    }
+  ]
+}

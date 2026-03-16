@@ -50,7 +50,35 @@
         ],
         "aliases": [
           "MSX BASIC"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "msx-basic",
+        "scopeName": "source.msx-basic",
+        "path": "./src/syntaxes/msx-basic.tmLanguage.json"
+      }
+    ],
+    "semanticTokenTypes": [
+      {
+        "id": "keyword"
+      },
+      {
+        "id": "number"
+      },
+      {
+        "id": "string"
+      },
+      {
+        "id": "variable"
+      },
+      {
+        "id": "function"
+      },
+      {
+        "id": "operator"
       }
     ],
     "commands": [
