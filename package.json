@@ -94,6 +94,8 @@
         "languages": [
           "msx-basic"
         ],
+        "program": "./src/debugAdapter.js",
+        "runtime": "node",
         "configurationAttributes": {
           "launch": {
             "required": [

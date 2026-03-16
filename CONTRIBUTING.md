@@ -103,12 +103,6 @@ Open the project folder in VSCode.
 code .
 ```
 
-Depending on your platform:
-
-- **Windows**: Install [MSYS2](https://www.msys2.org/) or MinGW for `g++`;
-- **Linux/macOS**: Ensure `g++` and `make` are installed;
-- Install the C++ extension in VSCode.
-
 ### 5️⃣ Install the dependencies
 
 ```
@@ -132,7 +126,10 @@ To test your changes:
    if you use openMSX installed from flathub: `flatpak run org.openmsx.openMSX`.
 4. Initialize the project: `ctrl+shift+P → Show and Run Commands → MSXBAS2ROM: Initialize Project`;
 5. Open one of the MSX BASIC files;
-6. Test it with F5;
+6. Test it with F5;  
+   See logs at:  
+   `Output → MSX Debugger`  
+   `/tmp/msx-debug.log`
 7. Close the new IDE session when the test is finished.
 
 Finally, press ctrl+shift+B to compile and generate a new release (.vsix):

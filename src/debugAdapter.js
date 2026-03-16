@@ -11,6 +11,7 @@ const {
   StackFrame,
   Scope,
   Source,
+  Handles,
 } = require("vscode-debugadapter");
 
 const CDBParser = require("./cdbParser");
@@ -35,6 +36,8 @@ class MSXDebugSession extends DebugSession {
 
     this.msx = null;
     this.cdb = null;
+
+    this.sourceHandles = new Handles();
   }
 
   //--------------------------------------------------
@@ -51,13 +54,21 @@ class MSXDebugSession extends DebugSession {
       supportsStepBack: false,
       supportsDataBreakpoints: false,
       supportsConditionalBreakpoints: false,
-      setBreakpoint: true,
     };
 
     this.sendResponse(response);
     this.sendEvent(new InitializedEvent());
 
     log("initializeRequest executed");
+  }
+
+  //--------------------------------------------------
+  // configurationDoneRequest
+  //--------------------------------------------------
+  configurationDoneRequest(response, args) {
+    log("configurationDone");
+
+    this.sendResponse(response);
   }
 
   //--------------------------------------------------
@@ -149,6 +160,14 @@ class MSXDebugSession extends DebugSession {
   async setBreakPointsRequest(response, args) {
     const source = args.source.path;
 
+    if (this.breakpoints[source]) {
+      for (const id of this.breakpoints[source]) {
+        await this.msx.removeBreakpoint(id);
+      }
+    }
+
+    this.breakpoints[source] = [];
+
     const breakpoints = [];
 
     for (const bp of args.breakpoints) {
@@ -157,9 +176,12 @@ class MSXDebugSession extends DebugSession {
       const addr = this.cdb.getAddressForLine(line);
 
       if (addr !== null) {
-        await this.msx.setBreakpoint(addr);
+        const id = await this.msx.setBreakpoint(addr);
+
+        this.breakpoints[source].push(id);
 
         breakpoints.push({
+          id,
           verified: true,
           line,
         });
@@ -171,9 +193,7 @@ class MSXDebugSession extends DebugSession {
       }
     }
 
-    response.body = {
-      breakpoints,
-    };
+    response.body = { breakpoints };
 
     this.sendResponse(response);
   }
@@ -184,12 +204,13 @@ class MSXDebugSession extends DebugSession {
 
   stackTraceRequest(response, args) {
     const frames = [];
+    const ref = this.sourceHandles.create(this.program);
 
     frames.push(
       new StackFrame(
         1,
         "MSX BASIC",
-        new Source(this.program, this.program),
+        new Source(path.basename(this.program), undefined, ref),
         1,
         0,
       ),
@@ -199,6 +220,36 @@ class MSXDebugSession extends DebugSession {
       stackFrames: frames,
       totalFrames: frames.length,
     };
+
+    this.sendResponse(response);
+  }
+
+  //--------------------------------------------------
+  // SOURCE
+  //--------------------------------------------------
+
+  sourceRequest(response, args) {
+    try {
+      const ref = args.sourceReference;
+
+      if (!ref) {
+        response.success = false;
+        this.sendResponse(response);
+        return;
+      }
+
+      const file = this.sourceHandles.get(ref);
+
+      const content = fs.readFileSync(file, "utf8");
+
+      response.body = {
+        content: content,
+      };
+    } catch (err) {
+      log("sourceRequest error: " + err.toString());
+
+      response.success = false;
+    }
 
     this.sendResponse(response);
   }
