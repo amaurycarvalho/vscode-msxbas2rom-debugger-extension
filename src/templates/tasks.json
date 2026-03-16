@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-msx",
+      "type": "shell",
+
+      "command": "${config:msxDebugger.msxbas2romPath}",
+
+      "args": ["${file}", "-a", "--elf"],
+
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+
+      "problemMatcher": []
+    }
+  ]
+}

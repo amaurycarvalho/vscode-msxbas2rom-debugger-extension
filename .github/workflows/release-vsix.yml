@@ -1,0 +1,65 @@
+name: Release VSIX
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      # 1️⃣ Checkout
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2️⃣ Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "22"
+
+      # 3️⃣ Install dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # 4️⃣ Install vsce
+      - name: Install vsce
+        run: npm install --save-dev @vscode/vsce
+
+      # 5️⃣ Read version from package.json (assumindo que está na raiz)
+      - name: Read version
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      # 6️⃣ Package VSIX
+      - name: Package VSIX
+        run: npx vsce package --out msxbas2rom-debugger-${{ env.VERSION }}.vsix
+
+      # 7️⃣ Read CHANGELOG.md for release body
+      - name: Read CHANGELOG
+        id: changelog
+        run: |
+          BODY=$(cat CHANGELOG.md)
+          echo "RELEASE_BODY<<EOF" >> $GITHUB_ENV
+          echo "$BODY" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      # 8️⃣ Create GitHub release using CHANGELOG.md
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: "msxbas2rom-debugger v${{ env.VERSION }}"
+          body: ${{ env.RELEASE_BODY }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 9️⃣ Upload VSIX to release
+      - name: Upload VSIX
+        uses: softprops/action-gh-release@v1
+        with:
+          files: msxbas2rom-debugger-${{ env.VERSION }}.vsix
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

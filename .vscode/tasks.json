@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "npx vsce package",
+      "windows": {
+        "command": "npx vsce package"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [
+        {
+          "owner": "vsce",
+          "pattern": {
+            "regexp": "^\\s+ERROR\\s+(.*)$",
+            "message": 1
+          }
+        }
+      ]
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "command": "npm update package; npx vsce ls",
+      "windows": {
+        "command": "npm update package; npx vsce ls"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": [
+        {
+          "owner": "vsce",
+          "pattern": {
+            "regexp": "^\\s+ERROR\\s+(.*)$",
+            "message": 1
+          }
+        }
+      ]
+    }
+  ]
+}
