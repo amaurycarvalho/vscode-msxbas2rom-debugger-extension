@@ -140,3 +140,11 @@ vite.config.ts.timestamp-*
 
 # Extension release
 *.vsix
+
+# binaries and symbols
+*.rom
+*.noi
+*.omds
+*.symbol
+*.cdb
+*.elf
