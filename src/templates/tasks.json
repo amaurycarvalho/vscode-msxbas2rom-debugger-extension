@@ -7,14 +7,33 @@
 
       "command": "${config:msxDebugger.msxbas2romPath}",
 
-      "args": ["${file}", "-a", "--elf"],
+      "args": ["${file}", "-a", "--cdb"],
 
       "group": {
         "kind": "build",
         "isDefault": true
       },
+      "problemMatcher": {
+        "owner": "msxbas2rom",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^(.+\\.bas):(\\d+): ERROR: (.+)$",
+          "file": 1,
+          "line": 2,
+          "message": 3
+        }
+      }
+    },
 
-      "problemMatcher": []
+    {
+      "label": "Run on openMSX",
+      "type": "shell",
+      "command": "${config:msxDebugger.openmsxPath}",
+      "args": [
+        "-control",
+        "stdio",
+        "${workspaceFolder}/${fileBasenameNoExtension}.rom"
+      ]
     }
   ]
 }

@@ -115,7 +115,7 @@ Depending on your platform:
 npm i --save-dev
 ```
 
-### 6️⃣ Build a new release
+### 6️⃣ Test and build a new release
 
 In the VSCode press ctrl+shift+T to check the project:
 
@@ -124,7 +124,16 @@ npm update package
 npx vsce ls
 ```
 
-Next, press F5 to do a local test.
+To test your changes:
+
+1. Open src/extension.js and press F5 to do a local test (choose `Extension Development Host`);
+2. A new VSCode session will open, select there the tests/ folder;
+3. Configure emulator and compiler paths: `File → Preferences → Settings (ctrl+,) → Extensions → MSXBAS2ROM Debugger`;  
+   if you use openMSX installed from flathub: `flatpak run org.openmsx.openMSX`.
+4. Initialize the project: `ctrl+shift+P → Show and Run Commands → MSXBAS2ROM: Initialize Project`;
+5. Open one of the MSX BASIC files;
+6. Test it with F5;
+7. Close the new IDE session when the test is finished.
 
 Finally, press ctrl+shift+B to compile and generate a new release (.vsix):
 

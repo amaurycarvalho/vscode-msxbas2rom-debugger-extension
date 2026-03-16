@@ -4,6 +4,7 @@ Debugger for MSX BASIC programs compiled with MSXBAS2ROM.
 
 ## Requirements
 
+- [VSCode](https://code.visualstudio.com/)
 - [openMSX](https://openmsx.org/)
 - [msxbas2rom](https://github.com/amaurycarvalho/msxbas2rom)
 
@@ -11,21 +12,24 @@ Debugger for MSX BASIC programs compiled with MSXBAS2ROM.
 
 Download the VSIX file from [Releases](https://github.com/amaurycarvalho/vscode-msxbas2rom-debugger-extension) and install:
 
-code --install-extension msx-debugger.vsix
+```bash
+code --install-extension msxbas2rom-debugger-_version_.vsix
+```
 
 Or via VSCode:
 
+```
 View → Extensions (CTRL+SHIFT+X) → ... → Install from VSIX
+```
 
 ## Usage
 
-1. Compile your program:
-
-msxbas2rom test.bas
-
-2. Start debugging:
-
-F5
+1. Open VSCode and select your project folder;
+2. Configure emulator and compiler paths: `File → Preferences → Settings (ctrl+,) → Extensions → MSXBAS2ROM Debugger`;  
+   if you use openMSX installed from flathub: `flatpak run org.openmsx.openMSX`.
+3. Initialize the project: `ctrl+shift+P → Show and Run Commands → MSXBAS2ROM: Initialize Project`;
+4. Open one of the MSX BASIC files;
+5. Test it with F5.
 
 ## Features
 

@@ -1,0 +1,10 @@
+# vscode configuration
+.vscode/**
+
+# binaries and symbols
+*.rom
+*.noi
+*.omds
+*.symbol
+*.cdb
+*.elf

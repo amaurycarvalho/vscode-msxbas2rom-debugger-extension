@@ -5,19 +5,19 @@ const path = require("path");
 const fs = require("fs");
 
 const { DebugAdapterExecutable } = require("vscode");
-const { BADFLAGS } = require("dns");
 
+/**
+ * @param {vscode.ExtensionContext} context
+ */
 function activate(context) {
   //--------------------------------------------------
   // Debug Adapter registration
   //--------------------------------------------------
 
   const factory = new MSXDebugAdapterDescriptorFactory(context);
-
   context.subscriptions.push(
     vscode.debug.registerDebugAdapterDescriptorFactory("msx", factory),
   );
-
   context.subscriptions.push(factory);
 
   //--------------------------------------------------
@@ -30,13 +30,13 @@ function activate(context) {
       const folders = vscode.workspace.workspaceFolders;
 
       if (!folders || folders.length === 0) {
-        vscode.window.showErrorMessage("Open a workspace folder first.");
-
+        vscode.window.showErrorMessage(
+          "MSXBAS2ROM project initialization requires a workspace folder. Please open a folder first.",
+        );
         return;
       }
 
       const workspacePath = folders[0].uri.fsPath;
-
       const vscodeDir = path.join(workspacePath, ".vscode");
 
       if (!fs.existsSync(vscodeDir)) {
@@ -46,10 +46,9 @@ function activate(context) {
       copyTemplate(context, "launch.json", vscodeDir);
       copyTemplate(context, "tasks.json", vscodeDir);
 
-      vscode.window.showInformationMessage("MSX project initialized.");
+      vscode.window.showInformationMessage("MSXBAS2ROM project initialized.");
     },
   );
-
   context.subscriptions.push(initCommand);
 
   //--------------------------------------------------
@@ -59,37 +58,35 @@ function activate(context) {
   const openListener = vscode.workspace.onDidOpenTextDocument(
     async (document) => {
       const file = document.fileName.toLowerCase();
-
       if (!file.endsWith(".bas")) return;
 
       const folders = vscode.workspace.workspaceFolders;
 
-      if (!folders) return;
+      if (!folders || folders.length === 0) {
+        vscode.window.showWarningMessage(
+          "MSX BASIC file detected but no workspace folder is open. Please open a folder first.",
+        );
+        return;
+      }
 
       const workspacePath = folders[0].uri.fsPath;
-
       const vscodeDir = path.join(workspacePath, ".vscode");
-
       const launchPath = path.join(vscodeDir, "launch.json");
 
       if (fs.existsSync(launchPath)) return;
 
       const action = await vscode.window.showInformationMessage(
-        "MSX BASIC file detected. Initialize MSX project?",
-
-        "Initialize MSX Project",
+        "MSX BASIC file detected. Initialize MSXBAS2ROM project?",
+        "Initialize MSXBAS2ROM Project",
       );
 
-      if (action === "Initialize MSX Project") {
-        vscode.commands.executeCommand("msx.initializeProject");
+      if (action === "Initialize MSXBAS2ROM Project") {
+        await vscode.commands.executeCommand("msx.initializeProject");
       }
     },
   );
-
   context.subscriptions.push(openListener);
 }
-
-function deactivate() {}
 
 //--------------------------------------------------
 // Template copier
@@ -101,7 +98,13 @@ function copyTemplate(context, filename, targetDir) {
 
   if (fs.existsSync(dest)) return;
 
-  fs.copyFileSync(src, dest);
+  try {
+    fs.copyFileSync(src, dest);
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `Failed to copy template ${filename}: ${err.message}`,
+    );
+  }
 }
 
 //--------------------------------------------------
@@ -118,7 +121,6 @@ class MSXDebugAdapterDescriptorFactory {
       this.context.extensionPath,
       "debugAdapter.js",
     );
-
     const nodePath = process.execPath;
 
     return new DebugAdapterExecutable(nodePath, [adapterPath]);
@@ -126,6 +128,8 @@ class MSXDebugAdapterDescriptorFactory {
 
   dispose() {}
 }
+
+function deactivate() {}
 
 module.exports = {
   activate,
