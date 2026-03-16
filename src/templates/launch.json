@@ -2,16 +2,15 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug MSX BASIC",
       "type": "msx",
       "request": "launch",
+      "name": "Debug MSX BASIC",
 
       "program": "${file}",
+      "rom": "${fileBasenameNoExtension}.rom",
+      "cdb": "${fileBasenameNoExtension}.cdb",
 
-      "rom": "${workspaceFolder}/${fileBasenameNoExtension}.rom",
-      "cdb": "${workspaceFolder}/${fileBasenameNoExtension}.cdb",
-
-      "openmsx": "${config:msxDebugger.openmsxPath}"
+      "openmsxPath": "${config:msxDebugger.openmsxPath}"
     }
   ]
 }

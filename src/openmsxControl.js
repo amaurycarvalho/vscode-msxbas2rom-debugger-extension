@@ -7,6 +7,7 @@ class OpenMSXControl extends EventEmitter {
   constructor(openmsxPath, romPath) {
     super();
 
+    this.buffer = "";
     this.openmsxPath = openmsxPath;
     this.romPath = romPath;
   }
@@ -16,8 +17,20 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   start() {
+    console.log("Launching openMSX:", this.openmsxPath, this.romPath);
     return new Promise((resolve, reject) => {
-      this.proc = spawn(this.openmsxPath, ["-control", "stdio", this.romPath]);
+      const parts = this.openmsxPath.split(" ");
+
+      const cmd = parts[0];
+      const args = parts.slice(1);
+
+      this.proc = spawn(cmd, [
+        ...args,
+        "-control",
+        "stdio",
+        "-cart",
+        this.romPath,
+      ]);
 
       this.proc.stdout.on("data", (data) => {
         this._onData(data.toString());
@@ -31,7 +44,13 @@ class OpenMSXControl extends EventEmitter {
         this.emit("close");
       });
 
-      resolve();
+      this.proc.on("error", (err) => {
+        reject(err);
+      });
+
+      this.once("output", () => {
+        resolve();
+      });
     });
   }
 

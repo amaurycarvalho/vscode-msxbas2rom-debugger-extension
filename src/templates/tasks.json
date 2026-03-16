@@ -29,9 +29,21 @@
       "label": "Run on openMSX",
       "type": "shell",
       "command": "${config:msxDebugger.openmsxPath}",
+      "args": ["-cart", "${workspaceFolder}/${fileBasenameNoExtension}.rom"],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+
+    {
+      "label": "Debug on openMSX",
+      "type": "shell",
+      "command": "${config:msxDebugger.openmsxPath}",
       "args": [
         "-control",
         "stdio",
+        "-cart",
         "${workspaceFolder}/${fileBasenameNoExtension}.rom"
       ]
     }

@@ -1,5 +1,7 @@
 // debugAdapter.js
 
+console.error("MSX Debug Adapter starting...");
+
 const {
   DebugSession,
   InitializedEvent,
@@ -11,10 +13,18 @@ const {
   Source,
 } = require("vscode-debugadapter");
 
-const vscode = require("vscode");
 const CDBParser = require("./cdbParser");
 const OpenMSXControl = require("./openmsxControl");
-const VariableDecoder = require("./variableDecoder");
+const { decode } = require("./variableDecoder");
+
+const fs = require("fs");
+const path = require("path");
+
+const LOG_FILE = "/tmp/msx-debug.log";
+
+function log(msg) {
+  fs.appendFileSync(LOG_FILE, `[DEBUG] ${msg}\n`);
+}
 
 class MSXDebugSession extends DebugSession {
   constructor() {
@@ -32,6 +42,8 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   initializeRequest(response, args) {
+    log("initializeRequest");
+
     response.body = {
       supportsConfigurationDoneRequest: true,
       supportsEvaluateForHovers: true,
@@ -39,23 +51,42 @@ class MSXDebugSession extends DebugSession {
 
     this.sendResponse(response);
     this.sendEvent(new InitializedEvent());
+
+    log("initializeRequest executed");
   }
 
   //--------------------------------------------------
   // LAUNCH
   //--------------------------------------------------
   async launchRequest(response, args) {
-    const config = vscode.workspace.getConfiguration("msxDebugger");
+    const workspace = args.program ? path.dirname(args.program) : process.cwd();
 
-    const openmsxPath = args.openmsx || config.get("openmsxPath") || "openmsx";
+    const romPath = path.resolve(workspace, args.rom);
+    const cdbPath = path.resolve(workspace, args.cdb);
+
+    log("launchRequest called");
+
+    log("ROM: " + romPath);
+    log("CDB: " + cdbPath);
+
+    const openmsxPath = args.openmsxPath || "openmsx";
+
+    log("openMSX path: " + openmsxPath);
 
     //--------------------------------------------------
     // load CDB
     //--------------------------------------------------
 
-    this.cdb = new CDBParser(args.cdb);
+    log("Loading CDB...");
 
-    await this.cdb.load();
+    try {
+      this.cdb = new CDBParser(cdbPath);
+    } catch (e) {
+      log("CDB ERROR: " + e.toString());
+      throw e;
+    }
+
+    log("CDB loaded");
 
     //--------------------------------------------------
     // store program path
@@ -67,9 +98,13 @@ class MSXDebugSession extends DebugSession {
     // start emulator
     //--------------------------------------------------
 
-    this.msx = new OpenMSXControl(openmsxPath, args.rom);
+    log("Starting openMSX");
+
+    this.msx = new OpenMSXControl(openmsxPath, romPath);
 
     await this.msx.start();
+
+    log("openMSX started");
 
     this.sendResponse(response);
   }
@@ -173,7 +208,7 @@ class MSXDebugSession extends DebugSession {
     for (const name in allVars) {
       const v = allVars[name];
 
-      const value = await VariableDecoder.decode(v, this.msx);
+      const value = await decode(v, this.msx);
 
       vars.push({
         name: name,

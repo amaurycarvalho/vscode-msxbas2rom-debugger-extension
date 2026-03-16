@@ -84,6 +84,10 @@
               "cdb": {
                 "type": "string",
                 "description": "CDB debug symbol file"
+              },
+              "openmsxPath": {
+                "type": "string",
+                "description": "Path to openMSX"
               }
             }
           }
@@ -97,5 +101,8 @@
   },
   "devDependencies": {
     "@vscode/vsce": "^3.7.1"
+  },
+  "dependencies": {
+    "vscode-debugadapter": "^1.51.0"
   }
 }

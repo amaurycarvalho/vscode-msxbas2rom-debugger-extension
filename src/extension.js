@@ -6,6 +6,12 @@ const fs = require("fs");
 
 const { DebugAdapterExecutable } = require("vscode");
 
+const log = vscode.window.createOutputChannel("MSX Debugger");
+
+function logMsg(msg) {
+  log.appendLine(`[EXT] ${msg}`);
+}
+
 /**
  * @param {vscode.ExtensionContext} context
  */
@@ -14,11 +20,15 @@ function activate(context) {
   // Debug Adapter registration
   //--------------------------------------------------
 
+  logMsg("Extension activated");
+
   const factory = new MSXDebugAdapterDescriptorFactory(context);
   context.subscriptions.push(
     vscode.debug.registerDebugAdapterDescriptorFactory("msx", factory),
   );
   context.subscriptions.push(factory);
+
+  logMsg("Debug adapter factory registered");
 
   //--------------------------------------------------
   // Initialize project command
@@ -50,6 +60,8 @@ function activate(context) {
     },
   );
   context.subscriptions.push(initCommand);
+
+  logMsg("Initialize project command executed");
 
   //--------------------------------------------------
   // Auto detect BASIC files
@@ -117,11 +129,19 @@ class MSXDebugAdapterDescriptorFactory {
   }
 
   createDebugAdapterDescriptor(session) {
+    logMsg("createDebugAdapterDescriptor called");
+
     const adapterPath = path.join(
       this.context.extensionPath,
+      "src",
       "debugAdapter.js",
     );
-    const nodePath = process.execPath;
+
+    logMsg("Adapter path: " + adapterPath);
+
+    const nodePath = "node";
+
+    logMsg("Node path: " + nodePath);
 
     return new DebugAdapterExecutable(nodePath, [adapterPath]);
   }

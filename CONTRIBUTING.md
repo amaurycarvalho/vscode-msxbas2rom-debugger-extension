@@ -126,7 +126,7 @@ npx vsce ls
 
 To test your changes:
 
-1. Open src/extension.js and press F5 to do a local test (choose `Extension Development Host`);
+1. Open src/extension.js and press F5 to do a local test (choose `VSCode Extension Development`);
 2. A new VSCode session will open, select there the tests/ folder;
 3. Configure emulator and compiler paths: `File → Preferences → Settings (ctrl+,) → Extensions → MSXBAS2ROM Debugger`;  
    if you use openMSX installed from flathub: `flatpak run org.openmsx.openMSX`.
