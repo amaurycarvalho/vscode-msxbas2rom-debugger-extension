@@ -38,7 +38,12 @@
           "type": "string",
           "default": "msxbas2rom",
           "description": "Path to the msxbas2rom compiler."
-        }
+        },
+"msxDebugger.enableDebugLogs": {
+  "type": "boolean",
+  "default": false,
+  "description": "Enable debug logging for MSX debugger (writes to output channel and /tmp/msx-debug.log)."
+}
       }
     },
     "languages": [

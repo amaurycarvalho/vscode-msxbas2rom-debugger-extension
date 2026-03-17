@@ -123,7 +123,8 @@ To test your changes:
 1. Open src/extension.js and press F5 to do a local test (choose `VSCode Extension Development`);
 2. A new VSCode session will open, select there the tests/ folder;
 3. Configure emulator and compiler paths: `File → Preferences → Settings (ctrl+,) → Extensions → MSXBAS2ROM Debugger`;  
-   if you use openMSX installed from flathub: `flatpak run org.openmsx.openMSX`.
+   if you use openMSX installed from flathub: `flatpak run org.openmsx.openMSX`;  
+   enable logging in the configuration for debugging.
 4. Initialize the project: `ctrl+shift+P → Show and Run Commands → MSXBAS2ROM: Initialize Project`;
 5. Open one of the MSX BASIC files;
 6. Test it with F5;  

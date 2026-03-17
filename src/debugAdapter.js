@@ -16,16 +16,26 @@ const {
 
 const CDBParser = require("./cdbParser");
 const OpenMSXControl = require("./openmsxControl");
-const { decode } = require("./variableDecoder");
+const VariableDecoder = require("./variableDecoder");
 
 const fs = require("fs");
 const path = require("path");
 
+//--------------------------------------------------
+// Logging
+//--------------------------------------------------
+
 const LOG_FILE = "/tmp/msx-debug.log";
+let DEBUG_ENABLED = false;
 
 function log(msg) {
+  if (!DEBUG_ENABLED) return;
   fs.appendFileSync(LOG_FILE, `[DEBUG] ${msg}\n`);
 }
+
+//--------------------------------------------------
+// MSXDebugSession class
+//--------------------------------------------------
 
 class MSXDebugSession extends DebugSession {
   constructor() {
@@ -80,6 +90,12 @@ class MSXDebugSession extends DebugSession {
     const romPath = path.resolve(workspace, args.rom);
     const cdbPath = path.resolve(workspace, args.cdb);
 
+    DEBUG_ENABLED = args.enableDebugLogs === true;
+
+    OpenMSXControl.setDebug(DEBUG_ENABLED);
+    CDBParser.setDebug(DEBUG_ENABLED);
+    VariableDecoder.setDebug(DEBUG_ENABLED);
+
     log("launchRequest called");
 
     log("ROM: " + romPath);
@@ -121,6 +137,12 @@ class MSXDebugSession extends DebugSession {
     await this.msx.start();
 
     log("openMSX started");
+
+    log("showing emulator screen");
+    await this.msx.send("set renderer SDLGL-PP");
+
+    log("power on the machine");
+    await this.msx.send("set power on");
 
     //--------------------------------------------------
     // openMSX events
@@ -280,7 +302,7 @@ class MSXDebugSession extends DebugSession {
     for (const name in allVars) {
       const v = allVars[name];
 
-      const value = await decode(v, this.msx);
+      const value = await VariableDecoder.decode(v, this.msx);
 
       vars.push({
         name: name,

@@ -2,11 +2,26 @@
 
 const fs = require("fs");
 
+//--------------------------------------------------
+// Logging
+//--------------------------------------------------
+
 const LOG_FILE = "/tmp/msx-debug.log";
 
+let DEBUG_ENABLED = false;
+
+function setDebug(enabled) {
+  DEBUG_ENABLED = enabled;
+}
+
 function log(msg) {
+  if (!DEBUG_ENABLED) return;
   fs.appendFileSync(LOG_FILE, `[VAR] ${msg}\n`);
 }
+
+//--------------------------------------------------
+// VariableDecoder class
+//--------------------------------------------------
 
 class VariableDecoder {
   //--------------------------------------------------
@@ -102,3 +117,4 @@ class VariableDecoder {
 }
 
 module.exports = VariableDecoder;
+module.exports.setDebug = setDebug;

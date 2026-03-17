@@ -5,11 +5,27 @@
 
 const fs = require("fs");
 
+//--------------------------------------------------
+// Logging
+//--------------------------------------------------
+
 const LOG_FILE = "/tmp/msx-debug.log";
 
+let DEBUG_ENABLED = false;
+
+function setDebug(enabled) {
+  DEBUG_ENABLED = enabled;
+}
+
 function log(msg) {
+  if (!DEBUG_ENABLED) return;
   fs.appendFileSync(LOG_FILE, `[CDB] ${msg}\n`);
 }
+
+
+//--------------------------------------------------
+// CDBParser class
+//--------------------------------------------------
 
 class CDBParser {
   constructor(path) {
@@ -222,3 +238,4 @@ class CDBParser {
 }
 
 module.exports = CDBParser;
+module.exports.setDebug = setDebug;

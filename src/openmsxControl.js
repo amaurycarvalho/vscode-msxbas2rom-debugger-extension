@@ -1,14 +1,32 @@
 // openmsxControl.js
+// reference: 
+//   https://openmsx.org/manual/openmsx-control.html
+//   https://openmsx.org/manual/commands.html
 
 const { spawn } = require("child_process");
 const EventEmitter = require("events");
 const fs = require("fs");
 
+//--------------------------------------------------
+// Logging
+//--------------------------------------------------
+
 const LOG_FILE = "/tmp/msx-debug.log";
 
+let DEBUG_ENABLED = false;
+
+function setDebug(enabled) {
+  DEBUG_ENABLED = enabled;
+}
+
 function log(msg) {
+  if (!DEBUG_ENABLED) return;
   fs.appendFileSync(LOG_FILE, `[openMSX] ${msg}\n`);
 }
+
+//--------------------------------------------------
+// OpenMSXControl class
+//--------------------------------------------------
 
 class OpenMSXControl extends EventEmitter {
   constructor(openmsxPath, romPath) {
@@ -268,9 +286,11 @@ class OpenMSXControl extends EventEmitter {
 
   stop() {
     log("Stopping openMSX");
+    await this.msx.send("quit");
 
     if (this.proc) this.proc.kill();
   }
 }
 
 module.exports = OpenMSXControl;
+module.exports.setDebug = setDebug;

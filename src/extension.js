@@ -7,10 +7,21 @@ const fs = require("fs");
 const { DebugAdapterExecutable } = require("vscode");
 const { MSXBasicSemanticTokensProvider, legend } = require("./semanticTokens");
 
+//--------------------------------------------------
+// Logging
+//--------------------------------------------------
+
 const log = vscode.window.createOutputChannel("MSX Debugger");
 
 function logMsg(msg) {
+  if (!isDebugEnabled()) return;
   log.appendLine(`[EXT] ${msg}`);
+}
+
+function isDebugEnabled() {
+  return vscode.workspace
+    .getConfiguration("msxDebugger")
+    .get("enableDebugLogs", false);
 }
 
 /**
