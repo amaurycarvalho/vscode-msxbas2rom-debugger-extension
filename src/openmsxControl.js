@@ -1,5 +1,5 @@
 // openmsxControl.js
-// reference: 
+// reference:
 //   https://openmsx.org/manual/openmsx-control.html
 //   https://openmsx.org/manual/commands.html
 
@@ -21,7 +21,12 @@ function setDebug(enabled) {
 
 function log(msg) {
   if (!DEBUG_ENABLED) return;
-  fs.appendFileSync(LOG_FILE, `[openMSX] ${msg}\n`);
+
+  const timestamp = Date.now();
+  const dateObject = new Date(timestamp);
+  const isoString = dateObject.toISOString();
+
+  fs.appendFileSync(LOG_FILE, `${isoString} [openmsxControl] ${msg}\n`);
 }
 
 //--------------------------------------------------
@@ -33,6 +38,8 @@ class OpenMSXControl extends EventEmitter {
     super();
 
     this.buffer = "";
+    this.pendingReplies = [];
+    this.readyEmitted = false;
     this.openmsxPath = openmsxPath;
     this.romPath = romPath;
   }
@@ -63,7 +70,7 @@ class OpenMSXControl extends EventEmitter {
 
       this.proc.stdout.on("data", (data) => {
         const text = data.toString();
-        log(`stdout: ${text.trim()}`);
+        log(`raw data: ${text.trim()}`);
         this._onData(text);
       });
 
@@ -96,69 +103,114 @@ class OpenMSXControl extends EventEmitter {
   _onData(data) {
     this.buffer += data;
 
-    if (!this.buffer.includes("<openmsx-output>")) return;
+    let processed = false;
 
-    const output = this.buffer;
-    this.buffer = "";
-
-    log(`XML packet received`);
+    // strip wrapper tags to simplify parsing
+    this.buffer = this.buffer
+      .replace(/<openmsx-output>/g, "")
+      .replace(/<\/openmsx-output>/g, "");
 
     //--------------------------------------------------
     // reply handler (command responses)
     //--------------------------------------------------
 
-    const replyMatch = output.match(/<reply[^>]*>([\s\S]*?)<\/reply>/);
+    while (true) {
+      const match = this.buffer.match(/<reply[^>]*>([\s\S]*?)<\/reply>/);
+      if (!match) break;
 
-    if (replyMatch) {
-      const result = replyMatch[1];
+      const full = match[0];
+      const result = match[1];
 
       log(`reply: ${result}`);
 
-      if (this.currentResolve) {
-        this.currentResolve(result);
-        this.currentResolve = null;
+      const resolve = this.pendingReplies.shift();
+
+      if (resolve) {
+        resolve(result);
+      } else {
+        log("reply received but no pending command");
       }
+
+      //--------------------------------------------------
+      // check for cpuregs response
+      //--------------------------------------------------
+      const regex =
+        /(?<register>AF|BC|DE|HL|SP|PC)\s*=\s*(?<value>[0-9A-F]{4})/g;
+      const matches = [...result.matchAll(regex)];
+      if (matches) {
+        const registers = {};
+        matches.forEach((match) => {
+          registers[match.groups.register] = match.groups.value;
+        });
+        if (registers.PC)
+          this.buffer += `<update type="status" name="breakpoint">${registers.PC}</update>`;
+      }
+
+      //--------------------------------------------------
+      // remove current reply from buffer list
+      //--------------------------------------------------
+      this.buffer = this.buffer.replace(full, "");
+      processed = true;
     }
 
     //--------------------------------------------------
-    // notify handler (events)
+    // events handler
     //--------------------------------------------------
 
-    const notifyMatch = output.match(/<notify>([\s\S]*?)<\/notify>/);
+    while (true) {
+      const regex =
+        /<update\s+type="status"\s+name="(?<eventId>\w+)"\s*>(?<eventContent>.*?)<\/update>/;
+      const match = this.buffer.match(regex);
+      if (!match) break;
 
-    if (notifyMatch) {
-      const notify = notifyMatch[1];
+      const full = match[0];
+      const { eventId, eventContent } = match.groups;
 
-      log(`notify: ${notify}`);
+      log(`event: ${eventId} = ${eventContent}`);
 
       //--------------------------------------------------
-      // breakpoint hit
+      // cpu suspended
       //--------------------------------------------------
 
-      if (notify.includes("breakpoint")) {
-        const idMatch = notify.match(/id="(\d+)"/);
+      if (eventId.includes("cpu")) {
+        if (eventContent.includes("suspended")) {
+          this.emit("paused");
+          log(`CPU registers status request`);
+          this.send("cpuregs");
+        }
+      }
 
-        const id = idMatch ? parseInt(idMatch[1]) : null;
+      //--------------------------------------------------
+      // breakpoint
+      //--------------------------------------------------
 
-        log(`Breakpoint HIT id=${id}`);
+      if (eventId.includes("breakpoint")) {
+        const address = eventContent;
+
+        log(`Breakpoint at address=${address}`);
 
         this.emit("breakpointHit", {
-          id,
+          address,
         });
       }
 
       //--------------------------------------------------
-      // CPU break (manual pause)
+      // remove current reply from buffer list
       //--------------------------------------------------
-
-      if (notify.includes("break")) {
-        log(`CPU break event`);
-
-        this.emit("paused");
-      }
+      this.buffer = this.buffer.replace(full, "");
+      processed = true;
     }
 
-    this.emit("output", output);
+    if (processed && !this.readyEmitted) {
+      this.readyEmitted = true;
+      this.emit("output", "ready");
+    }
+
+    // prevent unbounded buffer growth if no complete tags are received
+    if (this.buffer.length > 65536) {
+      log("buffer overflow, trimming");
+      this.buffer = this.buffer.slice(-8192);
+    }
   }
 
   //--------------------------------------------------
@@ -167,7 +219,7 @@ class OpenMSXControl extends EventEmitter {
 
   send(command) {
     return new Promise((resolve) => {
-      this.currentResolve = resolve;
+      this.pendingReplies.push(resolve);
 
       const cmd = `<command>${command}</command>\n`;
 
@@ -207,8 +259,7 @@ class OpenMSXControl extends EventEmitter {
 
     const result = await this.send(cmd);
 
-    const idMatch = result.match(/id\s*=\s*(\d+)/);
-
+    const idMatch = result.match(/bp#(\d+)/);
     const id = idMatch ? parseInt(idMatch[1]) : null;
 
     log(`Breakpoint created id=${id}`);
@@ -219,7 +270,23 @@ class OpenMSXControl extends EventEmitter {
   async removeBreakpoint(id) {
     log(`removeBreakpoint ${id}`);
 
-    const cmd = `debug remove_bp ${id}`;
+    const cmd = `debug remove_bp bp#${id}`;
+
+    return await this.send(cmd);
+  }
+
+  async enableBreakpoint(id) {
+    log(`enableBreakpoint ${id}`);
+
+    const cmd = `debug breakpoint configure bp#${id} -enabled 1`;
+
+    return await this.send(cmd);
+  }
+
+  async disableBreakpoint(id) {
+    log(`enableBreakpoint ${id}`);
+
+    const cmd = `debug breakpoint configure bp#${id} -enabled 0`;
 
     return await this.send(cmd);
   }
@@ -284,9 +351,9 @@ class OpenMSXControl extends EventEmitter {
   // Shutdown
   //--------------------------------------------------
 
-  stop() {
+  async stop() {
     log("Stopping openMSX");
-    await this.msx.send("quit");
+    await this.send("quit");
 
     if (this.proc) this.proc.kill();
   }

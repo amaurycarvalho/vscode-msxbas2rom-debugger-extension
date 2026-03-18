@@ -39,11 +39,11 @@
           "default": "msxbas2rom",
           "description": "Path to the msxbas2rom compiler."
         },
-"msxDebugger.enableDebugLogs": {
-  "type": "boolean",
-  "default": false,
-  "description": "Enable debug logging for MSX debugger (writes to output channel and /tmp/msx-debug.log)."
-}
+        "msxDebugger.enableDebugLogs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging for MSX debugger (writes to output channel and /tmp/msx-debug.log)."
+        }
       }
     },
     "languages": [
@@ -92,6 +92,11 @@
         "title": "MSXBAS2ROM: Initialize Project"
       }
     ],
+    "breakpoints": [
+      {
+        "language": "msx-basic"
+      }
+    ],
     "debuggers": [
       {
         "type": "msx",
@@ -99,8 +104,6 @@
         "languages": [
           "msx-basic"
         ],
-        "program": "./src/debugAdapter.js",
-        "runtime": "node",
         "configurationAttributes": {
           "launch": {
             "required": [
@@ -123,6 +126,10 @@
               "openmsxPath": {
                 "type": "string",
                 "description": "Path to openMSX"
+              },
+              "enableDebugLogs": {
+                "type": "string",
+                "description": "Enable debug logging for MSX debugger"
               }
             }
           }

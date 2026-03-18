@@ -1,7 +1,5 @@
 // debugAdapter.js
 
-console.error("MSX Debug Adapter starting...");
-
 const {
   DebugSession,
   InitializedEvent,
@@ -30,7 +28,12 @@ let DEBUG_ENABLED = false;
 
 function log(msg) {
   if (!DEBUG_ENABLED) return;
-  fs.appendFileSync(LOG_FILE, `[DEBUG] ${msg}\n`);
+
+  const timestamp = Date.now();
+  const dateObject = new Date(timestamp);
+  const isoString = dateObject.toISOString();
+
+  fs.appendFileSync(LOG_FILE, `${isoString} [debugAdapter] ${msg}\n`);
 }
 
 //--------------------------------------------------
@@ -43,6 +46,9 @@ class MSXDebugSession extends DebugSession {
 
     this.breakpoints = {};
     this.threadId = 1;
+    this.breakpointIdToLine = new Map();
+    this.breakpointAddressToId = new Map();
+    this.currentLine = 1;
 
     this.msx = null;
     this.cdb = null;
@@ -90,7 +96,7 @@ class MSXDebugSession extends DebugSession {
     const romPath = path.resolve(workspace, args.rom);
     const cdbPath = path.resolve(workspace, args.cdb);
 
-    DEBUG_ENABLED = args.enableDebugLogs === true;
+    DEBUG_ENABLED = args.enableDebugLogs === "true";
 
     OpenMSXControl.setDebug(DEBUG_ENABLED);
     CDBParser.setDebug(DEBUG_ENABLED);
@@ -138,6 +144,13 @@ class MSXDebugSession extends DebugSession {
 
     log("openMSX started");
 
+    log("enabling events watching");
+    await this.msx.send("openmsx_update enable status");
+    //await this.msx.send("openmsx_update enable hardware");
+    //await this.msx.send("openmsx_update enable setting");
+    //await this.msx.send("openmsx_update enable setting-info");
+    //await this.msx.send("openmsx_update enable led");
+
     log("showing emulator screen");
     await this.msx.send("set renderer SDLGL-PP");
 
@@ -149,7 +162,16 @@ class MSXDebugSession extends DebugSession {
     //--------------------------------------------------
 
     this.msx.on("breakpointHit", (info) => {
-      log(`Breakpoint event received id=${info.id}`);
+      log(`Breakpoint event received address=0x${info.address}`);
+      const addr = parseInt(info.address, 16) || 0;
+
+      const id = this.breakpointAddressToId.get(addr) || 0;
+      log(`Breakpoint id=${id}`);
+
+      const line = this.breakpointIdToLine.get(id) || 1;
+      log(`Breakpoint line=${line}`);
+
+      this.currentLine = line;
 
       this.sendEvent(new StoppedEvent("breakpoint", this.threadId));
     });
@@ -181,36 +203,42 @@ class MSXDebugSession extends DebugSession {
 
   async setBreakPointsRequest(response, args) {
     const source = args.source.path;
+    const linesMap = this._getBasicLineMap(source);
 
     if (this.breakpoints[source]) {
       for (const id of this.breakpoints[source]) {
         await this.msx.removeBreakpoint(id);
+        this.breakpointIdToLine.delete(id);
       }
     }
 
+    this.breakpointAddressToId.clear();
     this.breakpoints[source] = [];
 
     const breakpoints = [];
 
     for (const bp of args.breakpoints) {
-      const line = bp.line;
-
-      const addr = this.cdb.getAddressForLine(line);
+      const editorLine = bp.line;
+      const basicLine = linesMap[editorLine] || null;
+      const addr =
+        basicLine !== null ? this.cdb.getAddressForLine(basicLine) : null;
 
       if (addr !== null) {
         const id = await this.msx.setBreakpoint(addr);
 
         this.breakpoints[source].push(id);
+        this.breakpointAddressToId.set(addr, id);
+        this.breakpointIdToLine.set(id, editorLine);
 
         breakpoints.push({
           id,
           verified: true,
-          line,
+          line: editorLine,
         });
       } else {
         breakpoints.push({
           verified: false,
-          line,
+          line: editorLine,
         });
       }
     }
@@ -226,14 +254,15 @@ class MSXDebugSession extends DebugSession {
 
   stackTraceRequest(response, args) {
     const frames = [];
-    const ref = this.sourceHandles.create(this.program);
+
+    log(`stack trace request: ${this.program}:${this.currentLine}`);
 
     frames.push(
       new StackFrame(
         1,
         "MSX BASIC",
-        new Source(path.basename(this.program), undefined, ref),
-        1,
+        new Source(path.basename(this.program), this.program),
+        this.currentLine,
         0,
       ),
     );
@@ -274,6 +303,31 @@ class MSXDebugSession extends DebugSession {
     }
 
     this.sendResponse(response);
+  }
+
+  //--------------------------------------------------
+  // BASIC line mapping
+  //--------------------------------------------------
+
+  _getBasicLineMap(sourcePath) {
+    const map = {};
+
+    try {
+      const content = fs.readFileSync(sourcePath, "utf8");
+      const lines = content.split(/\r?\n/);
+
+      for (let i = 0; i < lines.length; i++) {
+        const text = lines[i];
+        const match = text.match(/^\s*(\d+)\b/);
+        if (match) {
+          map[i + 1] = parseInt(match[1], 10);
+        }
+      }
+    } catch (err) {
+      log(`_getBasicLineMap error: ${err.toString()}`);
+    }
+
+    return map;
   }
 
   //--------------------------------------------------
@@ -323,6 +377,10 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   continueRequest(response, args) {
+    for (const id of this.breakpointIdToLine) {
+      this.msx.disableBreakpoint(id);
+    }
+
     this.msx.continue();
 
     this.sendResponse(response);
@@ -333,11 +391,20 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   nextRequest(response, args) {
-    this.msx.step();
+    //this.msx.step();
+    this.msx.continue();
 
     this.sendResponse(response);
 
     this.sendEvent(new StoppedEvent("step", this.threadId));
+  }
+
+  stepInRequest(response, args) {
+    this.nextRequest(response, args);
+  }
+
+  stepOutRequest(response, args) {
+    this.nextRequest(response, args);
   }
 
   //--------------------------------------------------
@@ -345,7 +412,11 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   pauseRequest(response, args) {
-    this.msx.break();
+    for (const id of this.breakpointIdToLine) {
+      this.msx.enableBreakpoint(id);
+    }
+
+    //this.msx.break();
 
     this.sendResponse(response);
 

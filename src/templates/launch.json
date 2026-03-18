@@ -10,6 +10,7 @@
       "rom": "${fileBasenameNoExtension}.rom",
       "cdb": "${fileBasenameNoExtension}.cdb",
 
+      "enableDebugLogs": "${config:msxDebugger.enableDebugLogs}",
       "openmsxPath": "${config:msxDebugger.openmsxPath}"
     }
   ]

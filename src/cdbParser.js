@@ -19,9 +19,13 @@ function setDebug(enabled) {
 
 function log(msg) {
   if (!DEBUG_ENABLED) return;
-  fs.appendFileSync(LOG_FILE, `[CDB] ${msg}\n`);
-}
 
+  const timestamp = Date.now();
+  const dateObject = new Date(timestamp);
+  const isoString = dateObject.toISOString();
+
+  fs.appendFileSync(LOG_FILE, `${isoString} [cdbParser] ${msg}\n`);
+}
 
 //--------------------------------------------------
 // CDBParser class

@@ -16,7 +16,12 @@ function setDebug(enabled) {
 
 function log(msg) {
   if (!DEBUG_ENABLED) return;
-  fs.appendFileSync(LOG_FILE, `[VAR] ${msg}\n`);
+
+  const timestamp = Date.now();
+  const dateObject = new Date(timestamp);
+  const isoString = dateObject.toISOString();
+
+  fs.appendFileSync(LOG_FILE, `${isoString} [variableDecoder] ${msg}\n`);
 }
 
 //--------------------------------------------------

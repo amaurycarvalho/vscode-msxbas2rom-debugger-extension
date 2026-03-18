@@ -15,13 +15,18 @@ const log = vscode.window.createOutputChannel("MSX Debugger");
 
 function logMsg(msg) {
   if (!isDebugEnabled()) return;
-  log.appendLine(`[EXT] ${msg}`);
+
+  const timestamp = Date.now();
+  const dateObject = new Date(timestamp);
+  const isoString = dateObject.toISOString();
+
+  log.appendLine(`${isoString} [extension] ${msg}`);
 }
 
 function isDebugEnabled() {
   return vscode.workspace
     .getConfiguration("msxDebugger")
-    .get("enableDebugLogs", false);
+    .get("enableDebugLogs", "false");
 }
 
 /**
@@ -166,8 +171,6 @@ class MSXDebugAdapterDescriptorFactory {
     logMsg("Adapter path: " + adapterPath);
 
     const nodePath = "node";
-
-    logMsg("Node path: " + nodePath);
 
     return new DebugAdapterExecutable(nodePath, [adapterPath]);
   }
