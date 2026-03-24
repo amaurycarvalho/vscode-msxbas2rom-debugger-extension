@@ -162,14 +162,14 @@ class MSXDebugSession extends DebugSession {
     //--------------------------------------------------
 
     this.msx.on("breakpointHit", (info) => {
-      log(`Breakpoint event received address=0x${info.address}`);
-      const addr = parseInt(info.address, 16) || 0;
+      const id = parseInt(info.id) || 1;
+      const addr = parseInt(info.address) || 0;
 
-      const id = this.breakpointAddressToId.get(addr) || 0;
-      log(`Breakpoint id=${id}`);
+      //const id = this.breakpointAddressToId.get(addr) || 0;
+      log(`Breakpoint id=${id} address=${addr}`);
 
       const line = this.breakpointIdToLine.get(id) || 1;
-      log(`Breakpoint line=${line}`);
+      log(`MSX-BASIC source code line=${line}`);
 
       this.currentLine = line;
 
@@ -377,8 +377,8 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   continueRequest(response, args) {
-    for (const id of this.breakpointIdToLine) {
-      this.msx.disableBreakpoint(id);
+    for (const entry of this.breakpointIdToLine) {
+      this.msx.disableBreakpoint(entry[0]);
     }
 
     this.msx.continue();
@@ -412,8 +412,8 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   pauseRequest(response, args) {
-    for (const id of this.breakpointIdToLine) {
-      this.msx.enableBreakpoint(id);
+    for (const entry of this.breakpointIdToLine) {
+      this.msx.enableBreakpoint(entry[0]);
     }
 
     //this.msx.break();

@@ -70,7 +70,7 @@ class OpenMSXControl extends EventEmitter {
 
       this.proc.stdout.on("data", (data) => {
         const text = data.toString();
-        log(`raw data: ${text.trim()}`);
+        log(`stdout: ${text.trim()}`);
         this._onData(text);
       });
 
@@ -115,10 +115,10 @@ class OpenMSXControl extends EventEmitter {
     //--------------------------------------------------
 
     while (true) {
-      const match = this.buffer.match(/<reply[^>]*>([\s\S]*?)<\/reply>/);
+      let match = this.buffer.match(/<reply[^>]*>([\s\S]*?)<\/reply>/);
       if (!match) break;
 
-      const full = match[0];
+      let full = match[0];
       const result = match[1];
 
       log(`reply: ${result}`);
@@ -132,18 +132,19 @@ class OpenMSXControl extends EventEmitter {
       }
 
       //--------------------------------------------------
-      // check for cpuregs response
+      // current breakpoint reply
       //--------------------------------------------------
-      const regex =
-        /(?<register>AF|BC|DE|HL|SP|PC)\s*=\s*(?<value>[0-9A-F]{4})/g;
-      const matches = [...result.matchAll(regex)];
-      if (matches) {
-        const registers = {};
-        matches.forEach((match) => {
-          registers[match.groups.register] = match.groups.value;
+      match = result.match(/bp#(\d+)\s+\{\s*-address\s+(\d+)/);
+      if (match) {
+        const id = match[1];
+        const address = match[2];
+
+        log(`Breakpoint bp#${id} at address ${address}`);
+
+        this.emit("breakpointHit", {
+          id,
+          address,
         });
-        if (registers.PC)
-          this.buffer += `<update type="status" name="breakpoint">${registers.PC}</update>`;
       }
 
       //--------------------------------------------------
@@ -169,33 +170,18 @@ class OpenMSXControl extends EventEmitter {
       log(`event: ${eventId} = ${eventContent}`);
 
       //--------------------------------------------------
-      // cpu suspended
+      // cpu suspended event
       //--------------------------------------------------
 
       if (eventId.includes("cpu")) {
         if (eventContent.includes("suspended")) {
           this.emit("paused");
-          log(`CPU registers status request`);
-          this.send("cpuregs");
+          this.getCurrentBreakpoint();
         }
       }
 
       //--------------------------------------------------
-      // breakpoint
-      //--------------------------------------------------
-
-      if (eventId.includes("breakpoint")) {
-        const address = eventContent;
-
-        log(`Breakpoint at address=${address}`);
-
-        this.emit("breakpointHit", {
-          address,
-        });
-      }
-
-      //--------------------------------------------------
-      // remove current reply from buffer list
+      // remove current event from buffer list
       //--------------------------------------------------
       this.buffer = this.buffer.replace(full, "");
       processed = true;
@@ -252,6 +238,13 @@ class OpenMSXControl extends EventEmitter {
   // Breakpoints
   //--------------------------------------------------
 
+  getCurrentBreakpoint() {
+    log(`Requesting current address and breakpoint number`);
+    this.send(
+      'set bps [debug breakpoint list] ; set i [lsearch -regexp $bps "-address [reg PC]"] ; list [lindex $bps [expr {$i - 1}]] [lindex $bps $i]',
+    );
+  }
+
   async setBreakpoint(address) {
     log(`setBreakpoint ${address}`);
 
@@ -284,7 +277,7 @@ class OpenMSXControl extends EventEmitter {
   }
 
   async disableBreakpoint(id) {
-    log(`enableBreakpoint ${id}`);
+    log(`disableBreakpoint ${id}`);
 
     const cmd = `debug breakpoint configure bp#${id} -enabled 0`;
 
