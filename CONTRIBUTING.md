@@ -84,7 +84,13 @@ git checkout -b hotfix/issue-nn
 git checkout -b chore/refactor-authentication-module
 git checkout -b docs/update-readme
 git checkout -b docs/issue-nn
-git checkout -b release/v0.0.0.0
+git checkout -b release/v0.0.0
+```
+
+After, push to the new branch:
+
+```bash
+git push origin release/v0.0.0
 ```
 
 Also, you can switch between branches with:
