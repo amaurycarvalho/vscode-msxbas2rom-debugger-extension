@@ -12,6 +12,11 @@ const { MSXBasicSemanticTokensProvider, legend } = require("./semanticTokens");
 //--------------------------------------------------
 
 const log = vscode.window.createOutputChannel("MSX Debugger");
+const promptedWorkspaces = new Set();
+
+function resetPromptedWorkspaces() {
+  promptedWorkspaces.clear();
+}
 
 function logMsg(msg) {
   if (!isDebugEnabled()) return;
@@ -58,6 +63,12 @@ function activate(context) {
     vscode.debug.registerDebugAdapterDescriptorFactory("msx", factory),
   );
   context.subscriptions.push(factory);
+  context.subscriptions.push(
+    vscode.debug.registerDebugAdapterTrackerFactory(
+      "msx",
+      new MSXDebugAdapterTrackerFactory(),
+    ),
+  );
 
   logMsg("Debug adapter factory registered");
 
@@ -86,6 +97,7 @@ function activate(context) {
 
       copyTemplate(context, "launch.json", vscodeDir);
       copyTemplate(context, "tasks.json", vscodeDir);
+      copyTemplate(context, ".gitignore", workspacePath);
 
       vscode.window.showInformationMessage("MSXBAS2ROM project initialized.");
     },
@@ -93,6 +105,24 @@ function activate(context) {
   context.subscriptions.push(initCommand);
 
   logMsg("Initialize project command executed");
+
+  //--------------------------------------------------
+  // Detect missing templates on workspace open
+  //--------------------------------------------------
+
+  const workspaceFolders = vscode.workspace.workspaceFolders || [];
+  workspaceFolders.forEach((folder) => {
+    maybePromptInitialize(context, folder);
+  });
+
+  const workspaceListener = vscode.workspace.onDidChangeWorkspaceFolders(
+    (event) => {
+      event.added.forEach((folder) => {
+        maybePromptInitialize(context, folder);
+      });
+    },
+  );
+  context.subscriptions.push(workspaceListener);
 
   //--------------------------------------------------
   // Auto detect BASIC files
@@ -151,6 +181,46 @@ function copyTemplate(context, filename, targetDir) {
 }
 
 //--------------------------------------------------
+// Workspace prompt helper
+//--------------------------------------------------
+
+async function maybePromptInitialize(context, workspaceFolder) {
+  if (!workspaceFolder) return;
+
+  const workspacePath = workspaceFolder.uri.fsPath;
+  if (promptedWorkspaces.has(workspacePath)) return;
+
+  const vscodeDir = path.join(workspacePath, ".vscode");
+  const launchPath = path.join(vscodeDir, "launch.json");
+  if (fs.existsSync(launchPath)) return;
+
+  let basFiles = [];
+  try {
+    basFiles = await vscode.workspace.findFiles(
+      new vscode.RelativePattern(workspaceFolder, "**/*.bas"),
+      "**/node_modules/**",
+      1,
+    );
+  } catch (err) {
+    logMsg(`Failed to scan workspace for .bas files: ${err}`);
+    return;
+  }
+
+  if (!basFiles || basFiles.length === 0) return;
+
+  promptedWorkspaces.add(workspacePath);
+
+  const action = await vscode.window.showInformationMessage(
+    "MSX BASIC files detected in this workspace. Initialize MSXBAS2ROM project?",
+    "Initialize MSXBAS2ROM Project",
+  );
+
+  if (action === "Initialize MSXBAS2ROM Project") {
+    await vscode.commands.executeCommand("msx.initializeProject");
+  }
+}
+
+//--------------------------------------------------
 // Debug adapter factory
 //--------------------------------------------------
 
@@ -178,9 +248,57 @@ class MSXDebugAdapterDescriptorFactory {
   dispose() {}
 }
 
+class MSXDebugAdapterTrackerFactory {
+  createDebugAdapterTracker(session) {
+    return {
+      onDidSendMessage: async (message) => {
+        if (message && message.event === "endProgram") {
+          const text =
+            (message.body && message.body.message) ||
+            "End of the user program.";
+
+          const action = await vscode.window.showInformationMessage(
+            "End of the user program. Restart?",
+            { modal: true },
+            "OK",
+          );
+
+          if (action === "OK") {
+            const folder = session.workspaceFolder || null;
+            const config = session.configuration;
+
+            try {
+              await vscode.debug.stopDebugging(session);
+            } catch (err) {
+              logMsg(`Failed to stop session for restart: ${err}`);
+            }
+
+            try {
+              await vscode.debug.startDebugging(folder, config);
+            } catch (err) {
+              logMsg(`Failed to restart debugging: ${err}`);
+            }
+          } else {
+            try {
+              await vscode.debug.stopDebugging(session);
+            } catch (err) {
+              logMsg(`Failed to stop debugging: ${err}`);
+            }
+          }
+        }
+      },
+    };
+  }
+}
+
 function deactivate() {}
 
 module.exports = {
   activate,
   deactivate,
+  copyTemplate,
+  maybePromptInitialize,
+  _test: {
+    resetPromptedWorkspaces,
+  },
 };

@@ -33,7 +33,7 @@ View → Extensions (CTRL+SHIFT+X) → ... → Install from VSIX
 
 ## Features
 
-- Breakpoints in BASIC lines
-- Variable watch
-- Step execution
-- Integration with openMSX
+- Breakpoints in BASIC lines;
+- Variables contents;
+- Step execution;
+- Integration with openMSX.

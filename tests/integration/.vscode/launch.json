@@ -11,7 +11,6 @@
       "cdb": "${fileBasenameNoExtension}.cdb",
 
       "enableDebugLogs": "${config:msxDebugger.enableDebugLogs}",
-      "enableVerboseLogs": "${config:msxDebugger.enableVerboseLogs}",
       "openmsxPath": "${config:msxDebugger.openmsxPath}",
       "preLaunchTask": "Build"
     }

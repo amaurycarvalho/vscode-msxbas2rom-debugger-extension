@@ -12,9 +12,14 @@ const fs = require("fs");
 const LOG_FILE = "/tmp/msx-debug.log";
 
 let DEBUG_ENABLED = false;
+let VERBOSE_ENABLED = false;
 
 function setDebug(enabled) {
   DEBUG_ENABLED = enabled;
+}
+
+function setVerbose(enabled) {
+  VERBOSE_ENABLED = enabled;
 }
 
 function log(msg) {
@@ -27,6 +32,11 @@ function log(msg) {
   fs.appendFileSync(LOG_FILE, `${isoString} [cdbParser] ${msg}\n`);
 }
 
+function vlog(msg) {
+  if (!DEBUG_ENABLED || !VERBOSE_ENABLED) return;
+  log(msg);
+}
+
 //--------------------------------------------------
 // CDBParser class
 //--------------------------------------------------
@@ -36,7 +46,8 @@ class CDBParser {
     this.path = path;
 
     this.lines = {}; // BASIC line -> address
-    this.variables = {}; // variable name -> {address,type}
+    this.endProgramAddress = null;
+    this.variables = {}; // symbol -> {address,type,name}
     this.symbols = {}; // raw symbols
     this.types = {}; // type definitions
 
@@ -87,32 +98,35 @@ class CDBParser {
       //----------------------------------
 
       if (line.startsWith("S:")) {
-        const symbol = line.substring(2).trim();
+        const symbolRaw = line.substring(2).trim();
+        const symbolKey = this._normalizeSymbol(symbolRaw);
 
-        lastSymbol = symbol;
+        lastSymbol = symbolKey;
 
-        this.symbols[symbol] = {
-          name: symbol,
+        this.symbols[symbolKey] = {
+          name: symbolKey,
+          raw: symbolRaw,
           address: null,
           type: null,
         };
 
-        log(`Symbol: ${symbol}`);
+        vlog(`Symbol: ${symbolKey}`);
 
         //----------------------------------
         // detect variable
         //----------------------------------
 
-        if (symbol.startsWith("G$VAR_")) {
-          const name = this.extractVariableName(symbol);
+        if (symbolKey.startsWith("G$VAR_")) {
+          const name = this.extractVariableName(symbolRaw);
 
-          this.variables[name] = {
-            symbol,
+          this.variables[symbolKey] = {
+            symbol: symbolKey,
+            name,
             address: null,
-            type: this.extractType(symbol),
+            type: this.extractType(symbolRaw),
           };
 
-          log(`Variable detected: ${name} (${this.variables[name].type})`);
+          vlog(`Variable detected: ${name} (${this.variables[symbolKey].type})`);
         }
 
         continue;
@@ -127,7 +141,8 @@ class CDBParser {
 
         if (parts.length < 3) continue;
 
-        const symbol = parts[1];
+        const symbolRaw = parts[1];
+        const symbol = this._normalizeSymbol(symbolRaw);
         const addrHex = parts[2];
 
         const addr = parseInt(addrHex, 16);
@@ -136,7 +151,15 @@ class CDBParser {
 
         this.symbols[symbol].address = addr;
 
-        log(`Address: ${symbol} -> 0x${addr.toString(16)}`);
+        vlog(`Address: ${symbol} -> 0x${addr.toString(16)}`);
+
+        //----------------------------------
+        // Program start and end
+        //----------------------------------
+
+        if (symbol.startsWith("G$END_PGM")) {
+          this.endProgramAddress = addr;
+        }
 
         //----------------------------------
         // BASIC lines
@@ -150,7 +173,7 @@ class CDBParser {
 
             this.lines[lineNumber] = addr;
 
-            log(`BASIC line ${lineNumber} -> 0x${addr.toString(16)}`);
+            vlog(`BASIC line ${lineNumber} -> 0x${addr.toString(16)}`);
           }
         }
 
@@ -159,12 +182,12 @@ class CDBParser {
         //----------------------------------
 
         if (symbol.startsWith("G$VAR_")) {
-          const name = this.extractVariableName(symbol);
+          const name = this.extractVariableName(symbolRaw);
 
-          if (this.variables[name]) {
-            this.variables[name].address = addr;
+          if (this.variables[symbol]) {
+            this.variables[symbol].address = addr;
 
-            log(`Variable address: ${name} -> 0x${addr.toString(16)}`);
+            vlog(`Variable address: ${name} -> 0x${addr.toString(16)}`);
           }
         }
 
@@ -182,7 +205,16 @@ class CDBParser {
   // helpers
   //----------------------------------
 
+  _normalizeSymbol(symbol) {
+    const withoutSuffix = symbol.split(",")[0];
+    const parenPos = withoutSuffix.indexOf("(");
+    return parenPos >= 0 ? withoutSuffix.substring(0, parenPos) : withoutSuffix;
+  }
+
   extractVariableName(symbol) {
+    const match = symbol.match(/G\$VAR_(.+?)\$0_0\$0/);
+    if (match) return match[1];
+
     let name = symbol.replace("G$VAR_", "");
 
     const pos = name.indexOf("$");
@@ -229,9 +261,22 @@ class CDBParser {
   }
 
   getVariables() {
-    log(`getVariables() -> ${Object.keys(this.variables).length} vars`);
+    const result = {};
+    const counts = {};
 
-    return this.variables;
+    for (const symbol of Object.keys(this.variables)) {
+      const v = this.variables[symbol];
+      const base = v.name || symbol;
+      const count = counts[base] || 0;
+      counts[base] = count + 1;
+
+      const name = count === 0 ? base : `${base}#${count + 1}`;
+      result[name] = v;
+    }
+
+    log(`getVariables() -> ${Object.keys(result).length} vars`);
+
+    return result;
   }
 
   getLines() {
@@ -239,7 +284,14 @@ class CDBParser {
 
     return this.lines;
   }
+
+  getEndProgramAddress() {
+    log(`getEndProgramAddress() -> ${this.endProgramAddress}`);
+
+    return this.endProgramAddress;
+  }
 }
 
 module.exports = CDBParser;
 module.exports.setDebug = setDebug;
+module.exports.setVerbose = setVerbose;

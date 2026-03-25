@@ -9,9 +9,14 @@ const fs = require("fs");
 const LOG_FILE = "/tmp/msx-debug.log";
 
 let DEBUG_ENABLED = false;
+let VERBOSE_ENABLED = false;
 
 function setDebug(enabled) {
   DEBUG_ENABLED = enabled;
+}
+
+function setVerbose(enabled) {
+  VERBOSE_ENABLED = enabled;
 }
 
 function log(msg) {
@@ -22,6 +27,11 @@ function log(msg) {
   const isoString = dateObject.toISOString();
 
   fs.appendFileSync(LOG_FILE, `${isoString} [variableDecoder] ${msg}\n`);
+}
+
+function vlog(msg) {
+  if (!DEBUG_ENABLED || !VERBOSE_ENABLED) return;
+  log(msg);
 }
 
 //--------------------------------------------------
@@ -60,13 +70,9 @@ class VariableDecoder {
   //--------------------------------------------------
 
   static async decodeInt16(variable, emulator) {
-    log(`decodeInt16 addr=0x${variable.address.toString(16)}`);
+    vlog(`decodeInt16 addr=0x${variable.address.toString(16)}`);
 
-    const buffer = await emulator.readMemory(variable.address, 2);
-
-    log(`raw bytes: ${buffer.toString("hex")}`);
-
-    const value = buffer.readInt16LE(0);
+    const value = await emulator.peekS16(variable.address);
 
     log(`decoded int16: ${value}`);
 
@@ -78,15 +84,21 @@ class VariableDecoder {
   //--------------------------------------------------
 
   static async decodeFloat24(variable, emulator) {
-    log(`decodeFloat24 addr=0x${variable.address.toString(16)}`);
+    vlog(`decodeFloat24 addr=0x${variable.address.toString(16)}`);
 
-    const buffer = await emulator.readMemory(variable.address, 3);
+    const b0 = await emulator.peek(variable.address);
+    const w1 = await emulator.peek16(variable.address + 1);
+    if (!b0) {
+      vlog("decoded float24: 0");
+      return 0;
+    }
 
-    log(`raw bytes: ${buffer.toString("hex")}`);
+    const sign = w1 & 0x8000 ? -1 : 1;
+    const mantissa = (w1 & 0x7fff) | 0x8000;
+    const exponent = b0 - 0x80;
 
-    const raw = buffer[0] | (buffer[1] << 8) | (buffer[2] << 16);
-
-    const value = raw / 65536;
+    const value =
+      sign * (mantissa / 65536) * Math.pow(2, exponent);
 
     log(`decoded float24: ${value}`);
 
@@ -98,20 +110,18 @@ class VariableDecoder {
   //--------------------------------------------------
 
   static async decodeString(variable, emulator) {
-    log(`decodeString addr=0x${variable.address.toString(16)}`);
+    vlog(`decodeString addr=0x${variable.address.toString(16)}`);
 
-    const lenBuf = await emulator.readMemory(variable.address, 1);
+    const length = await emulator.peek(variable.address);
 
-    const length = lenBuf[0];
-
-    log(`string length: ${length}`);
+    vlog(`string length: ${length}`);
 
     if (length === 0) {
-      log("empty string");
+      vlog("empty string");
       return "";
     }
 
-    const strBuf = await emulator.readMemory(variable.address + 1, length);
+    const strBuf = await emulator.readBlock(variable.address + 1, length);
 
     const value = strBuf.toString("ascii");
 
@@ -123,3 +133,4 @@ class VariableDecoder {
 
 module.exports = VariableDecoder;
 module.exports.setDebug = setDebug;
+module.exports.setVerbose = setVerbose;

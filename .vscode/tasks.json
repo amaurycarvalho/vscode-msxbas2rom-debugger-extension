@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build",
+      "label": "Build",
       "type": "shell",
       "command": "npx vsce package",
       "windows": {
@@ -23,15 +23,14 @@
       ]
     },
     {
-      "label": "test",
+      "label": "Package scanning check",
       "type": "shell",
       "command": "npm update package; npx vsce ls",
       "windows": {
         "command": "npm update package; npx vsce ls"
       },
       "group": {
-        "kind": "test",
-        "isDefault": true
+        "kind": "none"
       },
       "problemMatcher": [
         {
@@ -42,6 +41,18 @@
           }
         }
       ]
+    },
+    {
+      "label": "Test",
+      "type": "shell",
+      "command": "npm test",
+      "windows": {
+        "command": "npm test"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
     }
   ]
 }

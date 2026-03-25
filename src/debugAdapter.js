@@ -5,11 +5,14 @@ const {
   InitializedEvent,
   StoppedEvent,
   TerminatedEvent,
+  InvalidatedEvent,
   Thread,
   StackFrame,
   Scope,
   Source,
   Handles,
+  OutputEvent,
+  Event,
 } = require("vscode-debugadapter");
 
 const CDBParser = require("./cdbParser");
@@ -44,14 +47,20 @@ class MSXDebugSession extends DebugSession {
   constructor() {
     super();
 
-    this.breakpoints = {};
     this.threadId = 1;
-    this.breakpointIdToLine = new Map();
-    this.breakpointAddressToId = new Map();
     this.currentLine = 1;
 
     this.msx = null;
     this.cdb = null;
+
+    this.debuggingFlag = false;
+    this.autoBreakpointsEnabled = false;
+
+    this.userBreakpointIdsBySource = new Map(); // source -> [id]
+    this.userBreakpointsBySource = new Map(); // source -> Set(line)
+    this.autoBreakpointIds = new Set(); // ids created at launch for all LIN_*
+
+    this.emuBreakpointInfo = new Map(); // id -> { kind, source, line, basicLine }
 
     this.sourceHandles = new Handles();
   }
@@ -96,11 +105,17 @@ class MSXDebugSession extends DebugSession {
     const romPath = path.resolve(workspace, args.rom);
     const cdbPath = path.resolve(workspace, args.cdb);
 
-    DEBUG_ENABLED = args.enableDebugLogs === "true";
+    const enableDebugLogs = args.enableDebugLogs;
+    DEBUG_ENABLED = enableDebugLogs === true || enableDebugLogs === "true";
+    const enableVerboseLogs =
+      args.enableVerboseLogs === true || args.enableVerboseLogs === "true";
 
     OpenMSXControl.setDebug(DEBUG_ENABLED);
     CDBParser.setDebug(DEBUG_ENABLED);
     VariableDecoder.setDebug(DEBUG_ENABLED);
+    OpenMSXControl.setVerbose(enableVerboseLogs);
+    CDBParser.setVerbose(enableVerboseLogs);
+    VariableDecoder.setVerbose(enableVerboseLogs);
 
     log("launchRequest called");
 
@@ -140,7 +155,16 @@ class MSXDebugSession extends DebugSession {
 
     this.msx = new OpenMSXControl(openmsxPath, romPath);
 
-    await this.msx.start();
+    try {
+      await this.msx.start();
+    } catch (err) {
+      log(`openMSX start error: ${err}`);
+      response.success = false;
+      response.message =
+        "Failed to start openMSX. Check 'msxDebugger.openmsxPath'.";
+      this.sendResponse(response);
+      return;
+    }
 
     log("openMSX started");
 
@@ -158,6 +182,56 @@ class MSXDebugSession extends DebugSession {
     await this.msx.send("set power on");
 
     //--------------------------------------------------
+    // auto breakpoints (all LIN_* and END_PGM)
+    //--------------------------------------------------
+
+    const linesMap = this._getBasicLineMap(this.program);
+    const editorLineByBasicLine = {};
+
+    for (const editorLineStr of Object.keys(linesMap)) {
+      const editorLine = parseInt(editorLineStr, 10);
+      const basicLine = linesMap[editorLine];
+      if (basicLine !== null && basicLine !== undefined) {
+        editorLineByBasicLine[basicLine] = editorLine;
+      }
+    }
+
+    const cdbLines = this.cdb.getLines();
+
+    for (const basicLineStr of Object.keys(cdbLines)) {
+      const basicLine = parseInt(basicLineStr, 10);
+      const addr = cdbLines[basicLineStr];
+
+      const editorLine = editorLineByBasicLine[basicLine] || null;
+      const id = await this.msx.setBreakpoint(addr);
+
+      this.autoBreakpointIds.add(id);
+      this.emuBreakpointInfo.set(id, {
+        kind: "auto-line",
+        source: this.program,
+        line: editorLine,
+        basicLine,
+      });
+    }
+
+    const endAddr = this.cdb.getEndProgramAddress();
+    if (endAddr !== null && endAddr !== undefined) {
+      const endId = await this.msx.setBreakpoint(endAddr);
+      this.emuBreakpointInfo.set(endId, {
+        kind: "end",
+        source: this.program,
+        line: null,
+        basicLine: null,
+      });
+    } else {
+      log("END_PGM not found in CDB; endProgram breakpoint not created");
+    }
+
+    // Start debugging as if Pause is active: stop at the first auto breakpoint.
+    this.debuggingFlag = true;
+    await this._setAutoBreakpointsEnabled(true);
+
+    //--------------------------------------------------
     // openMSX events
     //--------------------------------------------------
 
@@ -165,21 +239,49 @@ class MSXDebugSession extends DebugSession {
       const id = parseInt(info.id) || 1;
       const addr = parseInt(info.address) || 0;
 
-      //const id = this.breakpointAddressToId.get(addr) || 0;
       log(`Breakpoint id=${id} address=${addr}`);
 
-      const line = this.breakpointIdToLine.get(id) || 1;
-      log(`MSX-BASIC source code line=${line}`);
+      const meta = this.emuBreakpointInfo.get(id) || null;
 
-      this.currentLine = line;
+      if (meta && meta.kind === "end") {
+        this._handleEndProgram();
+        return;
+      }
+
+      const line = meta ? meta.line : null;
+      const source = meta ? meta.source : this.program;
+
+      const hasUserBreakpoint = this._hasUserBreakpoint(source, line);
+
+      if (!this.debuggingFlag && !hasUserBreakpoint) {
+        log(`Ignoring breakpoint id=${id} (debuggingFlag off)`);
+        // Ensure auto breakpoints are disabled to avoid repeated hits
+        if (this.autoBreakpointsEnabled) {
+          this._setAutoBreakpointsEnabled(false).then(() => {
+            this.msx.continue();
+          });
+        }
+        return;
+      }
+
+      if (line !== null && line !== undefined) {
+        log(`MSX-BASIC source code line=${line}`);
+        this.currentLine = line;
+      }
 
       this.sendEvent(new StoppedEvent("breakpoint", this.threadId));
+      this.sendEvent(new InvalidatedEvent(["variables"]));
     });
 
     this.msx.on("paused", () => {
       log("Pause event received");
 
       this.sendEvent(new StoppedEvent("pause", this.threadId));
+      this.sendEvent(new InvalidatedEvent(["variables"]));
+    });
+
+    this.msx.on("endProgram", async (info) => {
+      await this._handleEndProgram();
     });
 
     this.sendResponse(response);
@@ -205,20 +307,20 @@ class MSXDebugSession extends DebugSession {
     const source = args.source.path;
     const linesMap = this._getBasicLineMap(source);
 
-    if (this.breakpoints[source]) {
-      for (const id of this.breakpoints[source]) {
-        await this.msx.removeBreakpoint(id);
-        this.breakpointIdToLine.delete(id);
-      }
+    const existingIds = this.userBreakpointIdsBySource.get(source) || [];
+    for (const id of existingIds) {
+      await this.msx.removeBreakpoint(id);
+      this.emuBreakpointInfo.delete(id);
     }
 
-    this.breakpointAddressToId.clear();
-    this.breakpoints[source] = [];
+    this.userBreakpointIdsBySource.set(source, []);
 
     const breakpoints = [];
+    const userLines = new Set();
 
     for (const bp of args.breakpoints) {
       const editorLine = bp.line;
+      userLines.add(editorLine);
       const basicLine = linesMap[editorLine] || null;
       const addr =
         basicLine !== null ? this.cdb.getAddressForLine(basicLine) : null;
@@ -226,9 +328,13 @@ class MSXDebugSession extends DebugSession {
       if (addr !== null) {
         const id = await this.msx.setBreakpoint(addr);
 
-        this.breakpoints[source].push(id);
-        this.breakpointAddressToId.set(addr, id);
-        this.breakpointIdToLine.set(id, editorLine);
+        this.userBreakpointIdsBySource.get(source).push(id);
+        this.emuBreakpointInfo.set(id, {
+          kind: "user",
+          source,
+          line: editorLine,
+          basicLine,
+        });
 
         breakpoints.push({
           id,
@@ -242,6 +348,8 @@ class MSXDebugSession extends DebugSession {
         });
       }
     }
+
+    this.userBreakpointsBySource.set(source, userLines);
 
     response.body = { breakpoints };
 
@@ -376,11 +484,9 @@ class MSXDebugSession extends DebugSession {
   // CONTINUE
   //--------------------------------------------------
 
-  continueRequest(response, args) {
-    for (const entry of this.breakpointIdToLine) {
-      this.msx.disableBreakpoint(entry[0]);
-    }
-
+  async continueRequest(response, args) {
+    this.debuggingFlag = false;
+    await this._setAutoBreakpointsEnabled(false);
     this.msx.continue();
 
     this.sendResponse(response);
@@ -390,37 +496,37 @@ class MSXDebugSession extends DebugSession {
   // STEP
   //--------------------------------------------------
 
-  nextRequest(response, args) {
+  async nextRequest(response, args) {
+    this.debuggingFlag = true;
+    await this._setAutoBreakpointsEnabled(true);
     //this.msx.step();
     this.msx.continue();
 
     this.sendResponse(response);
-
-    this.sendEvent(new StoppedEvent("step", this.threadId));
   }
 
-  stepInRequest(response, args) {
-    this.nextRequest(response, args);
+  async stepInRequest(response, args) {
+    this.debuggingFlag = true;
+    await this.nextRequest(response, args);
   }
 
-  stepOutRequest(response, args) {
-    this.nextRequest(response, args);
+  async stepOutRequest(response, args) {
+    this.debuggingFlag = true;
+    await this.nextRequest(response, args);
   }
 
   //--------------------------------------------------
   // PAUSE
   //--------------------------------------------------
 
-  pauseRequest(response, args) {
-    for (const entry of this.breakpointIdToLine) {
-      this.msx.enableBreakpoint(entry[0]);
-    }
-
+  async pauseRequest(response, args) {
+    await this._setAutoBreakpointsEnabled(true);
+    this.debuggingFlag = true;
     //this.msx.break();
 
     this.sendResponse(response);
 
-    this.sendEvent(new StoppedEvent("pause", this.threadId));
+    this.msx.continue();
   }
 
   //--------------------------------------------------
@@ -434,6 +540,48 @@ class MSXDebugSession extends DebugSession {
 
     this.sendEvent(new TerminatedEvent());
   }
+
+  async showModal(msg) {
+    this.sendEvent(new OutputEvent(`${msg}\n`));
+  }
+
+  _hasUserBreakpoint(source, line) {
+    if (!source || line === null || line === undefined) return false;
+
+    const set = this.userBreakpointsBySource.get(source);
+
+    return set ? set.has(line) : false;
+  }
+
+  async _handleEndProgram() {
+    log(`End of the user program`);
+
+    this.sendEvent(new StoppedEvent("pause", this.threadId));
+    this.sendEvent(
+      new Event("endProgram", {
+        message: "End of the user program.",
+      }),
+    );
+  }
+
+  async _setAutoBreakpointsEnabled(enabled) {
+    if (this.autoBreakpointsEnabled === enabled) return;
+    this.autoBreakpointsEnabled = enabled;
+
+    for (const id of this.autoBreakpointIds) {
+      if (enabled) {
+        await this.msx.enableBreakpoint(id);
+      } else {
+        await this.msx.disableBreakpoint(id);
+      }
+    }
+  }
 }
 
-DebugSession.run(MSXDebugSession);
+if (process.env.MSX_UNIT_TEST !== "1") {
+  DebugSession.run(MSXDebugSession);
+}
+
+module.exports = {
+  MSXDebugSession,
+};
