@@ -56,13 +56,6 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: "msxbas2rom-debugger v${{ env.VERSION }}"
           body: ${{ env.RELEASE_BODY }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 9️⃣ Upload VSIX to release
-      - name: Upload VSIX
-        uses: softprops/action-gh-release@v2
-        with:
           files: msxbas2rom-debugger-${{ env.VERSION }}.vsix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
