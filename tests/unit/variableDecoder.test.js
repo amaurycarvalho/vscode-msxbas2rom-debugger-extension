@@ -27,7 +27,7 @@ test("decode float24", async () => {
     emulator,
   );
 
-  assert.equal(value, 3.1414794921875);
+  assert.equal(value, 3.142);
 });
 
 test("decode string", async () => {

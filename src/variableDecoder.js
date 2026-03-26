@@ -1,37 +1,20 @@
 // variableDecoder.js
 
 const fs = require("fs");
+const Logger = require("./logger");
 
-//--------------------------------------------------
-// Logging
-//--------------------------------------------------
-
-const LOG_FILE = "/tmp/msx-debug.log";
-
-let DEBUG_ENABLED = false;
-let VERBOSE_ENABLED = false;
+const logger = new Logger("variableDecoder");
 
 function setDebug(enabled) {
-  DEBUG_ENABLED = enabled;
+  Logger.configure({ debugEnabled: enabled });
 }
 
 function setVerbose(enabled) {
-  VERBOSE_ENABLED = enabled;
+  Logger.configure({ verboseEnabled: enabled });
 }
 
-function log(msg) {
-  if (!DEBUG_ENABLED) return;
-
-  const timestamp = Date.now();
-  const dateObject = new Date(timestamp);
-  const isoString = dateObject.toISOString();
-
-  fs.appendFileSync(LOG_FILE, `${isoString} [variableDecoder] ${msg}\n`);
-}
-
-function vlog(msg) {
-  if (!DEBUG_ENABLED || !VERBOSE_ENABLED) return;
-  log(msg);
+function setLogPath(logPath) {
+  Logger.configure({ logPath });
 }
 
 //--------------------------------------------------
@@ -44,7 +27,7 @@ class VariableDecoder {
   //--------------------------------------------------
 
   static async decode(variable, emulator) {
-    log(
+    logger.debug(
       `decode variable: ${variable.symbol || "unknown"} type=${variable.type} addr=0x${variable.address?.toString(16)}`,
     );
 
@@ -60,7 +43,7 @@ class VariableDecoder {
         return await this.decodeString(variable, emulator);
 
       default:
-        log(`unsupported type: ${variable.type}`);
+        logger.warning(`unsupported type: ${variable.type}`);
         return "<unsupported>";
     }
   }
@@ -70,11 +53,11 @@ class VariableDecoder {
   //--------------------------------------------------
 
   static async decodeInt16(variable, emulator) {
-    vlog(`decodeInt16 addr=0x${variable.address.toString(16)}`);
+    logger.debug(`decodeInt16 addr=0x${variable.address.toString(16)}`);
 
     const value = await emulator.peekS16(variable.address);
 
-    log(`decoded int16: ${value}`);
+    logger.debug(`decoded int16: ${value}`);
 
     return value;
   }
@@ -84,25 +67,26 @@ class VariableDecoder {
   //--------------------------------------------------
 
   static async decodeFloat24(variable, emulator) {
-    vlog(`decodeFloat24 addr=0x${variable.address.toString(16)}`);
+    logger.debug(`decodeFloat24 addr=0x${variable.address.toString(16)}`);
 
     const b0 = await emulator.peek(variable.address);
     const w1 = await emulator.peek16(variable.address + 1);
     if (!b0) {
-      vlog("decoded float24: 0");
+      logger.debug("decoded float24: 0");
       return 0;
     }
 
     const sign = w1 & 0x8000 ? -1 : 1;
     const mantissa = (w1 & 0x7fff) | 0x8000;
     const exponent = b0 - 0x80;
+    const roundError = 0.000052;
 
     const value =
-      sign * (mantissa / 65536) * Math.pow(2, exponent);
+      sign * (mantissa / 65536) * Math.pow(2, exponent) + roundError;
 
-    log(`decoded float24: ${value}`);
+    logger.debug(`decoded float24: ${value}`);
 
-    return value;
+    return Math.round(value * 1000) / 1000;
   }
 
   //--------------------------------------------------
@@ -110,14 +94,14 @@ class VariableDecoder {
   //--------------------------------------------------
 
   static async decodeString(variable, emulator) {
-    vlog(`decodeString addr=0x${variable.address.toString(16)}`);
+    logger.debug(`decodeString addr=0x${variable.address.toString(16)}`);
 
     const length = await emulator.peek(variable.address);
 
-    vlog(`string length: ${length}`);
+    logger.debug(`string length: ${length}`);
 
     if (length === 0) {
-      vlog("empty string");
+      logger.debug("empty string");
       return "";
     }
 
@@ -125,7 +109,7 @@ class VariableDecoder {
 
     const value = strBuf.toString("ascii");
 
-    log(`decoded string: "${value}"`);
+    logger.debug(`decoded string: "${value}"`);
 
     return value;
   }
@@ -134,3 +118,4 @@ class VariableDecoder {
 module.exports = VariableDecoder;
 module.exports.setDebug = setDebug;
 module.exports.setVerbose = setVerbose;
+module.exports.setLogPath = setLogPath;

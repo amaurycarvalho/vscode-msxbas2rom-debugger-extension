@@ -136,7 +136,7 @@ To test your changes:
 6. Test it with F5;  
    See logs at:  
    `Output → MSX Debugger`  
-   `/tmp/msx-debug.log`
+   `%TEMP%/msx-debug.log`
 7. Close the new IDE session when the test is finished.
 
 Finally, press ctrl+shift+B to compile and generate a new release (.vsix):

@@ -6,37 +6,77 @@
 const { spawn } = require("child_process");
 const EventEmitter = require("events");
 const fs = require("fs");
+const path = require("path");
+const Logger = require("./logger");
 
-//--------------------------------------------------
-// Logging
-//--------------------------------------------------
-
-const LOG_FILE = "/tmp/msx-debug.log";
-
-let DEBUG_ENABLED = false;
-let VERBOSE_ENABLED = false;
+const logger = new Logger("openmsxControl");
 
 function setDebug(enabled) {
-  DEBUG_ENABLED = enabled;
+  Logger.configure({ debugEnabled: enabled });
 }
 
 function setVerbose(enabled) {
-  VERBOSE_ENABLED = enabled;
+  Logger.configure({ verboseEnabled: enabled });
 }
 
-function log(msg) {
-  if (!DEBUG_ENABLED) return;
-
-  const timestamp = Date.now();
-  const dateObject = new Date(timestamp);
-  const isoString = dateObject.toISOString();
-
-  fs.appendFileSync(LOG_FILE, `${isoString} [openmsxControl] ${msg}\n`);
+function setLogPath(logPath) {
+  Logger.configure({ logPath });
 }
 
-function vlog(msg) {
-  if (!DEBUG_ENABLED || !VERBOSE_ENABLED) return;
-  log(msg);
+function splitCommand(command) {
+  const parts = [];
+  let current = "";
+  let quote = null;
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else if (ch === "\\" && i + 1 < command.length) {
+        current += command[i + 1];
+        i++;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (current.length) {
+        parts.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (current.length) {
+    parts.push(current);
+  }
+
+  return parts;
+}
+
+function normalizeOpenMSXCommand(cmd) {
+  if (!cmd || process.platform !== "darwin") return cmd;
+
+  if (!cmd.endsWith(".app")) return cmd;
+
+  const candidate = path.join(cmd, "Contents", "MacOS", "openmsx");
+  if (fs.existsSync(candidate)) {
+    return candidate;
+  }
+
+  return cmd;
 }
 
 //--------------------------------------------------
@@ -59,25 +99,31 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   start(timeoutMs = 8000) {
-    log(`Launching openMSX: ${this.openmsxPath} ${this.romPath}`);
+    logger.info(`Launching openMSX: ${this.openmsxPath} ${this.romPath}`);
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (this.readyEmitted) return;
         const err = new Error(`openMSX startup timeout after ${timeoutMs}ms`);
-        log(err.message);
+        logger.error(err.message);
         reject(err);
       }, timeoutMs);
 
-      const parts = this.openmsxPath.split(" ");
+      const parts = splitCommand(this.openmsxPath || "");
+      if (!parts.length) {
+        const err = new Error("openMSX path is empty");
+        logger.error(err.message);
+        reject(err);
+        return;
+      }
 
-      const cmd = parts[0];
+      const cmd = normalizeOpenMSXCommand(parts[0]);
       const args = parts.slice(1);
 
-      vlog(`spawn cmd: ${cmd}`);
-      vlog(`spawn args: ${JSON.stringify(args)}`);
+      logger.debug(`spawn cmd: ${cmd}`);
+      logger.debug(`spawn args: ${JSON.stringify(args)}`);
 
-      const controlMode = process.platform === "linux" ? "stdio" : "pipe";
+      const controlMode = process.platform === "win32" ? "pipe" : "stdio";
 
       this.proc = spawn(cmd, [
         ...args,
@@ -89,27 +135,27 @@ class OpenMSXControl extends EventEmitter {
 
       this.proc.stdout.on("data", (data) => {
         const text = data.toString("latin1");
-        vlog(`stdout: ${text.trim()}`);
+        logger.debug(`stdout: ${text.trim()}`);
         this._onData(text);
       });
 
       this.proc.stderr.on("data", (data) => {
         const text = data.toString("latin1");
-        vlog(`stderr: ${text.trim()}`);
+        logger.debug(`stderr: ${text.trim()}`);
       });
 
       this.proc.on("close", (code) => {
-        log(`openMSX closed with code ${code}`);
+        logger.info(`openMSX closed with code ${code}`);
         this.emit("close");
       });
 
       this.proc.on("error", (err) => {
-        log(`spawn error: ${err}`);
+        logger.error(`spawn error: ${err}`);
         reject(err);
       });
 
       this.once("output", () => {
-        log("openMSX control channel ready");
+        logger.info("openMSX control channel ready");
         clearTimeout(timeout);
         resolve();
       });
@@ -146,14 +192,14 @@ class OpenMSXControl extends EventEmitter {
       let full = match[0];
       const result = match[1];
 
-      vlog(`reply: ${result}`);
+      logger.debug(`reply: ${result}`);
 
       const resolve = this.pendingReplies.shift();
 
       if (resolve) {
         resolve(result);
       } else {
-        log("reply received but no pending command");
+        logger.error("reply received but no pending command");
       }
 
       //--------------------------------------------------
@@ -164,7 +210,7 @@ class OpenMSXControl extends EventEmitter {
         const id = match[1];
         const address = match[2];
 
-        log(`Breakpoint bp#${id} at address ${address}`);
+        logger.debug(`Breakpoint bp#${id} at address ${address}`);
 
         this.emit("breakpointHit", {
           id,
@@ -192,7 +238,7 @@ class OpenMSXControl extends EventEmitter {
       const full = match[0];
       const { eventId, eventContent } = match.groups;
 
-      vlog(`event: ${eventId} = ${eventContent}`);
+      logger.debug(`event: ${eventId} = ${eventContent}`);
 
       //--------------------------------------------------
       // cpu suspended event
@@ -214,7 +260,7 @@ class OpenMSXControl extends EventEmitter {
 
     // prevent unbounded buffer growth if no complete tags are received
     if (this.buffer.length > 65536) {
-      log("buffer overflow, trimming");
+      logger.warning("buffer overflow, trimming");
       this.buffer = this.buffer.slice(-8192);
     }
   }
@@ -229,7 +275,7 @@ class OpenMSXControl extends EventEmitter {
 
       const cmd = `<command>${command}</command>\n`;
 
-    vlog(`SEND: ${command}`);
+      logger.debug(`SEND: ${command}`);
 
       this.proc.stdin.write(cmd);
     });
@@ -240,17 +286,17 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   async continue() {
-    log("continue");
+    logger.debug("continue");
     await this.send("debug cont");
   }
 
   async break() {
-    log("break");
+    logger.debug("break");
     await this.send("debug break");
   }
 
   async step() {
-    log("step");
+    logger.debug("step");
     await this.send("debug step");
   }
 
@@ -259,14 +305,14 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   getCurrentBreakpoint() {
-    log(`Requesting current address and breakpoint number`);
+    logger.debug(`Requesting current address and breakpoint number`);
     this.send(
       'set bps [debug breakpoint list] ; set i [lsearch -regexp $bps "-address [reg PC]"] ; list [lindex $bps [expr {$i - 1}]] [lindex $bps $i]',
     );
   }
 
   async setBreakpoint(address) {
-    log(`setBreakpoint ${address}`);
+    logger.debug(`setBreakpoint ${address}`);
 
     const cmd = `debug set_bp ${address}`;
 
@@ -275,13 +321,13 @@ class OpenMSXControl extends EventEmitter {
     const idMatch = result.match(/bp#(\d+)/);
     const id = idMatch ? parseInt(idMatch[1]) : null;
 
-    log(`Breakpoint created id=${id}`);
+    logger.debug(`Breakpoint created id=${id}`);
 
     return id;
   }
 
   async removeBreakpoint(id) {
-    log(`removeBreakpoint ${id}`);
+    logger.debug(`removeBreakpoint ${id}`);
 
     const cmd = `debug remove_bp bp#${id}`;
 
@@ -289,7 +335,7 @@ class OpenMSXControl extends EventEmitter {
   }
 
   async enableBreakpoint(id) {
-    log(`enableBreakpoint ${id}`);
+    logger.debug(`enableBreakpoint ${id}`);
 
     const cmd = `debug breakpoint configure bp#${id} -enabled 1`;
 
@@ -297,7 +343,7 @@ class OpenMSXControl extends EventEmitter {
   }
 
   async disableBreakpoint(id) {
-    log(`disableBreakpoint ${id}`);
+    logger.debug(`disableBreakpoint ${id}`);
 
     const cmd = `debug breakpoint configure bp#${id} -enabled 0`;
 
@@ -404,7 +450,7 @@ class OpenMSXControl extends EventEmitter {
   }
 
   async readBlock(address, size) {
-    vlog(`readBlock addr=${address} size=${size}`);
+    logger.debug(`readBlock addr=${address} size=${size}`);
     const cmd = `debug read_block {Main RAM} ${this._formatAddress(address)} ${size}`;
     const result = await this.send(cmd);
     return Buffer.from(result, "latin1");
@@ -415,7 +461,7 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   async stop() {
-    log("Stopping openMSX");
+    logger.info("Stopping openMSX");
     await this.send("quit");
 
     if (this.proc) this.proc.kill();
@@ -425,3 +471,4 @@ class OpenMSXControl extends EventEmitter {
 module.exports = OpenMSXControl;
 module.exports.setDebug = setDebug;
 module.exports.setVerbose = setVerbose;
+module.exports.setLogPath = setLogPath;

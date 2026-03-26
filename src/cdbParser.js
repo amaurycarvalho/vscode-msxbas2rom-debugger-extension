@@ -4,37 +4,20 @@
 //
 
 const fs = require("fs");
+const Logger = require("./logger");
 
-//--------------------------------------------------
-// Logging
-//--------------------------------------------------
-
-const LOG_FILE = "/tmp/msx-debug.log";
-
-let DEBUG_ENABLED = false;
-let VERBOSE_ENABLED = false;
+const logger = new Logger("cdbParser");
 
 function setDebug(enabled) {
-  DEBUG_ENABLED = enabled;
+  Logger.configure({ debugEnabled: enabled });
 }
 
 function setVerbose(enabled) {
-  VERBOSE_ENABLED = enabled;
+  Logger.configure({ verboseEnabled: enabled });
 }
 
-function log(msg) {
-  if (!DEBUG_ENABLED) return;
-
-  const timestamp = Date.now();
-  const dateObject = new Date(timestamp);
-  const isoString = dateObject.toISOString();
-
-  fs.appendFileSync(LOG_FILE, `${isoString} [cdbParser] ${msg}\n`);
-}
-
-function vlog(msg) {
-  if (!DEBUG_ENABLED || !VERBOSE_ENABLED) return;
-  log(msg);
+function setLogPath(logPath) {
+  Logger.configure({ logPath });
 }
 
 //--------------------------------------------------
@@ -51,11 +34,11 @@ class CDBParser {
     this.symbols = {}; // raw symbols
     this.types = {}; // type definitions
 
-    log(`Opening CDB file: ${path}`);
+    logger.info(`Opening CDB file: ${path}`);
 
     const text = fs.readFileSync(path, "utf8");
 
-    log(`CDB file loaded (${text.length} bytes)`);
+    logger.info(`CDB file loaded (${text.length} bytes)`);
 
     this.parse(text);
   }
@@ -63,7 +46,7 @@ class CDBParser {
   parse(text) {
     const rows = text.split(/\r?\n/);
 
-    log(`Parsing ${rows.length} rows`);
+    logger.info(`Parsing ${rows.length} rows`);
 
     let lastSymbol = null;
 
@@ -87,7 +70,7 @@ class CDBParser {
             name: typeName,
           };
 
-          log(`Type detected: ${typeName}`);
+          logger.debug(`Type detected: ${typeName}`);
         }
 
         continue;
@@ -110,7 +93,7 @@ class CDBParser {
           type: null,
         };
 
-        vlog(`Symbol: ${symbolKey}`);
+        logger.debug(`Symbol: ${symbolKey}`);
 
         //----------------------------------
         // detect variable
@@ -126,7 +109,9 @@ class CDBParser {
             type: this.extractType(symbolRaw),
           };
 
-          vlog(`Variable detected: ${name} (${this.variables[symbolKey].type})`);
+          logger.debug(
+            `Variable detected: ${name} (${this.variables[symbolKey].type})`,
+          );
         }
 
         continue;
@@ -151,7 +136,7 @@ class CDBParser {
 
         this.symbols[symbol].address = addr;
 
-        vlog(`Address: ${symbol} -> 0x${addr.toString(16)}`);
+        logger.debug(`Address: ${symbol} -> 0x${addr.toString(16)}`);
 
         //----------------------------------
         // Program start and end
@@ -173,7 +158,7 @@ class CDBParser {
 
             this.lines[lineNumber] = addr;
 
-            vlog(`BASIC line ${lineNumber} -> 0x${addr.toString(16)}`);
+            logger.debug(`BASIC line ${lineNumber} -> 0x${addr.toString(16)}`);
           }
         }
 
@@ -187,7 +172,7 @@ class CDBParser {
           if (this.variables[symbol]) {
             this.variables[symbol].address = addr;
 
-            vlog(`Variable address: ${name} -> 0x${addr.toString(16)}`);
+            logger.debug(`Variable address: ${name} -> 0x${addr.toString(16)}`);
           }
         }
 
@@ -195,10 +180,10 @@ class CDBParser {
       }
     }
 
-    log(`Parse complete`);
-    log(`Total symbols: ${Object.keys(this.symbols).length}`);
-    log(`Total variables: ${Object.keys(this.variables).length}`);
-    log(`Total BASIC lines: ${Object.keys(this.lines).length}`);
+    logger.info(`Parse complete`);
+    logger.info(`Total symbols: ${Object.keys(this.symbols).length}`);
+    logger.info(`Total variables: ${Object.keys(this.variables).length}`);
+    logger.info(`Total BASIC lines: ${Object.keys(this.lines).length}`);
   }
 
   //----------------------------------
@@ -247,7 +232,7 @@ class CDBParser {
   getAddressForLine(line) {
     const addr = this.lines[line] || null;
 
-    log(`getAddressForLine(${line}) -> ${addr}`);
+    logger.debug(`getAddressForLine(${line}) -> ${addr}`);
 
     return addr;
   }
@@ -255,7 +240,7 @@ class CDBParser {
   getVariable(name) {
     const v = this.variables[name] || null;
 
-    log(`getVariable(${name}) -> ${v ? "found" : "null"}`);
+    logger.debug(`getVariable(${name}) -> ${v ? "found" : "null"}`);
 
     return v;
   }
@@ -274,19 +259,19 @@ class CDBParser {
       result[name] = v;
     }
 
-    log(`getVariables() -> ${Object.keys(result).length} vars`);
+    logger.debug(`getVariables() -> ${Object.keys(result).length} vars`);
 
     return result;
   }
 
   getLines() {
-    log(`getLines() -> ${Object.keys(this.lines).length} lines`);
+    logger.debug(`getLines() -> ${Object.keys(this.lines).length} lines`);
 
     return this.lines;
   }
 
   getEndProgramAddress() {
-    log(`getEndProgramAddress() -> ${this.endProgramAddress}`);
+    logger.debug(`getEndProgramAddress() -> ${this.endProgramAddress}`);
 
     return this.endProgramAddress;
   }
@@ -295,3 +280,4 @@ class CDBParser {
 module.exports = CDBParser;
 module.exports.setDebug = setDebug;
 module.exports.setVerbose = setVerbose;
+module.exports.setLogPath = setLogPath;

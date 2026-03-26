@@ -6,38 +6,48 @@ const fs = require("fs");
 
 const { DebugAdapterExecutable } = require("vscode");
 const { MSXBasicSemanticTokensProvider, legend } = require("./semanticTokens");
+const Logger = require("./logger");
 
 //--------------------------------------------------
 // Logging
 //--------------------------------------------------
 
-const log = vscode.window.createOutputChannel("MSX Debugger");
+const outputChannel = vscode.window.createOutputChannel("MSX Debugger");
 const promptedWorkspaces = new Set();
+const logger = new Logger("extension");
 
 function resetPromptedWorkspaces() {
   promptedWorkspaces.clear();
 }
 
-function logMsg(msg) {
-  if (!isDebugEnabled()) return;
+function configureLogger() {
+  const config = vscode.workspace.getConfiguration("msxDebugger");
+  const enableDebugLogs = config.get("enableDebugLogs") === true;
+  const enableVerboseLogs = config.get("enableVerboseLogs") === true;
+  const logPath = config.get("logPath");
 
-  const timestamp = Date.now();
-  const dateObject = new Date(timestamp);
-  const isoString = dateObject.toISOString();
-
-  log.appendLine(`${isoString} [extension] ${msg}`);
-}
-
-function isDebugEnabled() {
-  return vscode.workspace
-    .getConfiguration("msxDebugger")
-    .get("enableDebugLogs", "false");
+  Logger.configure({
+    debugEnabled: enableDebugLogs,
+    verboseEnabled: enableVerboseLogs,
+    logPath,
+    outputChannel,
+  });
 }
 
 /**
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
+  configureLogger();
+
+  const configListener = vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration("msxDebugger")) {
+      configureLogger();
+      logger.info("Logger configuration updated");
+    }
+  });
+  context.subscriptions.push(configListener);
+
   //--------------------------------------------------
   // Semantic tokens provider registration
   //--------------------------------------------------
@@ -56,7 +66,7 @@ function activate(context) {
   // Debug Adapter registration
   //--------------------------------------------------
 
-  logMsg("Extension activated");
+  logger.info("Extension activated");
 
   const factory = new MSXDebugAdapterDescriptorFactory(context);
   context.subscriptions.push(
@@ -70,7 +80,7 @@ function activate(context) {
     ),
   );
 
-  logMsg("Debug adapter factory registered");
+  logger.info("Debug adapter factory registered");
 
   //--------------------------------------------------
   // Initialize project command
@@ -104,7 +114,7 @@ function activate(context) {
   );
   context.subscriptions.push(initCommand);
 
-  logMsg("Initialize project command executed");
+  logger.info("Initialize project command executed");
 
   //--------------------------------------------------
   // Detect missing templates on workspace open
@@ -202,7 +212,7 @@ async function maybePromptInitialize(context, workspaceFolder) {
       1,
     );
   } catch (err) {
-    logMsg(`Failed to scan workspace for .bas files: ${err}`);
+    logger.warning(`Failed to scan workspace for .bas files: ${err}`);
     return;
   }
 
@@ -230,7 +240,7 @@ class MSXDebugAdapterDescriptorFactory {
   }
 
   createDebugAdapterDescriptor(session) {
-    logMsg("createDebugAdapterDescriptor called");
+    logger.debug("createDebugAdapterDescriptor called");
 
     const adapterPath = path.join(
       this.context.extensionPath,
@@ -238,9 +248,9 @@ class MSXDebugAdapterDescriptorFactory {
       "debugAdapter.js",
     );
 
-    logMsg("Adapter path: " + adapterPath);
+    logger.debug("Adapter path: " + adapterPath);
 
-    const nodePath = "node";
+    const nodePath = process.execPath || "node";
 
     return new DebugAdapterExecutable(nodePath, [adapterPath]);
   }
@@ -270,19 +280,19 @@ class MSXDebugAdapterTrackerFactory {
             try {
               await vscode.debug.stopDebugging(session);
             } catch (err) {
-              logMsg(`Failed to stop session for restart: ${err}`);
+              logger.warning(`Failed to stop session for restart: ${err}`);
             }
 
             try {
               await vscode.debug.startDebugging(folder, config);
             } catch (err) {
-              logMsg(`Failed to restart debugging: ${err}`);
+              logger.warning(`Failed to restart debugging: ${err}`);
             }
           } else {
             try {
               await vscode.debug.stopDebugging(session);
             } catch (err) {
-              logMsg(`Failed to stop debugging: ${err}`);
+              logger.warning(`Failed to stop debugging: ${err}`);
             }
           }
         }

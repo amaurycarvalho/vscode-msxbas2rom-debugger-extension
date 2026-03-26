@@ -12,6 +12,7 @@
 
       "enableDebugLogs": "${config:msxDebugger.enableDebugLogs}",
       "enableVerboseLogs": "${config:msxDebugger.enableVerboseLogs}",
+      "logPath": "${config:msxDebugger.logPath}",
       "openmsxPath": "${config:msxDebugger.openmsxPath}",
       "preLaunchTask": "Build"
     }

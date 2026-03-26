@@ -25,9 +25,9 @@
     {
       "label": "Package scanning check",
       "type": "shell",
-      "command": "npm update package; npx vsce ls",
+      "command": "npm update package; npm audit fix; npx vsce ls",
       "windows": {
-        "command": "npm update package; npx vsce ls"
+        "command": "npm update package; npm audit fix; npx vsce ls"
       },
       "group": {
         "kind": "none"

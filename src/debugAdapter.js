@@ -18,26 +18,12 @@ const {
 const CDBParser = require("./cdbParser");
 const OpenMSXControl = require("./openmsxControl");
 const VariableDecoder = require("./variableDecoder");
+const Logger = require("./logger");
 
 const fs = require("fs");
 const path = require("path");
 
-//--------------------------------------------------
-// Logging
-//--------------------------------------------------
-
-const LOG_FILE = "/tmp/msx-debug.log";
-let DEBUG_ENABLED = false;
-
-function log(msg) {
-  if (!DEBUG_ENABLED) return;
-
-  const timestamp = Date.now();
-  const dateObject = new Date(timestamp);
-  const isoString = dateObject.toISOString();
-
-  fs.appendFileSync(LOG_FILE, `${isoString} [debugAdapter] ${msg}\n`);
-}
+const logger = new Logger("debugAdapter");
 
 //--------------------------------------------------
 // MSXDebugSession class
@@ -70,7 +56,7 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   initializeRequest(response, args) {
-    log("initializeRequest");
+    logger.debug("initializeRequest");
 
     response.body = {
       supportsConfigurationDoneRequest: true,
@@ -84,14 +70,14 @@ class MSXDebugSession extends DebugSession {
     this.sendResponse(response);
     this.sendEvent(new InitializedEvent());
 
-    log("initializeRequest executed");
+    logger.debug("initializeRequest executed");
   }
 
   //--------------------------------------------------
   // configurationDoneRequest
   //--------------------------------------------------
   configurationDoneRequest(response, args) {
-    log("configurationDone");
+    logger.debug("configurationDone");
 
     this.sendResponse(response);
   }
@@ -106,40 +92,40 @@ class MSXDebugSession extends DebugSession {
     const cdbPath = path.resolve(workspace, args.cdb);
 
     const enableDebugLogs = args.enableDebugLogs;
-    DEBUG_ENABLED = enableDebugLogs === true || enableDebugLogs === "true";
-    const enableVerboseLogs =
+    const debugEnabled = enableDebugLogs === true || enableDebugLogs === "true";
+    const verboseEnabled =
       args.enableVerboseLogs === true || args.enableVerboseLogs === "true";
+    const logPath = args.logPath;
 
-    OpenMSXControl.setDebug(DEBUG_ENABLED);
-    CDBParser.setDebug(DEBUG_ENABLED);
-    VariableDecoder.setDebug(DEBUG_ENABLED);
-    OpenMSXControl.setVerbose(enableVerboseLogs);
-    CDBParser.setVerbose(enableVerboseLogs);
-    VariableDecoder.setVerbose(enableVerboseLogs);
+    Logger.configure({
+      debugEnabled,
+      verboseEnabled,
+      logPath,
+    });
 
-    log("launchRequest called");
+    logger.info("launchRequest called");
 
-    log("ROM: " + romPath);
-    log("CDB: " + cdbPath);
+    logger.info("ROM: " + romPath);
+    logger.info("CDB: " + cdbPath);
 
     const openmsxPath = args.openmsxPath || "openmsx";
 
-    log("openMSX path: " + openmsxPath);
+    logger.info("openMSX path: " + openmsxPath);
 
     //--------------------------------------------------
     // load CDB
     //--------------------------------------------------
 
-    log("Loading CDB...");
+    logger.info("Loading CDB...");
 
     try {
       this.cdb = new CDBParser(cdbPath);
     } catch (e) {
-      log("CDB ERROR: " + e.toString());
+      logger.error("CDB ERROR: " + e.toString());
       throw e;
     }
 
-    log("CDB loaded");
+    logger.info("CDB loaded");
 
     //--------------------------------------------------
     // store program path
@@ -151,14 +137,14 @@ class MSXDebugSession extends DebugSession {
     // start emulator
     //--------------------------------------------------
 
-    log("Starting openMSX");
+    logger.info("Starting openMSX");
 
     this.msx = new OpenMSXControl(openmsxPath, romPath);
 
     try {
       await this.msx.start();
     } catch (err) {
-      log(`openMSX start error: ${err}`);
+      logger.error(`openMSX start error: ${err}`);
       response.success = false;
       response.message =
         "Failed to start openMSX. Check 'msxDebugger.openmsxPath'.";
@@ -166,19 +152,15 @@ class MSXDebugSession extends DebugSession {
       return;
     }
 
-    log("openMSX started");
+    logger.info("openMSX started");
 
-    log("enabling events watching");
+    logger.info("enabling events watching");
     await this.msx.send("openmsx_update enable status");
-    //await this.msx.send("openmsx_update enable hardware");
-    //await this.msx.send("openmsx_update enable setting");
-    //await this.msx.send("openmsx_update enable setting-info");
-    //await this.msx.send("openmsx_update enable led");
 
-    log("showing emulator screen");
+    logger.info("showing emulator screen");
     await this.msx.send("set renderer SDLGL-PP");
 
-    log("power on the machine");
+    logger.info("power on the machine");
     await this.msx.send("set power on");
 
     //--------------------------------------------------
@@ -224,7 +206,9 @@ class MSXDebugSession extends DebugSession {
         basicLine: null,
       });
     } else {
-      log("END_PGM not found in CDB; endProgram breakpoint not created");
+      logger.error(
+        "END_PGM not found in CDB; endProgram breakpoint not created",
+      );
     }
 
     // Start debugging as if Pause is active: stop at the first auto breakpoint.
@@ -239,7 +223,7 @@ class MSXDebugSession extends DebugSession {
       const id = parseInt(info.id) || 1;
       const addr = parseInt(info.address) || 0;
 
-      log(`Breakpoint id=${id} address=${addr}`);
+      logger.debug(`Breakpoint id=${id} address=${addr}`);
 
       const meta = this.emuBreakpointInfo.get(id) || null;
 
@@ -254,7 +238,7 @@ class MSXDebugSession extends DebugSession {
       const hasUserBreakpoint = this._hasUserBreakpoint(source, line);
 
       if (!this.debuggingFlag && !hasUserBreakpoint) {
-        log(`Ignoring breakpoint id=${id} (debuggingFlag off)`);
+        logger.debug(`Ignoring breakpoint id=${id} (debuggingFlag off)`);
         // Ensure auto breakpoints are disabled to avoid repeated hits
         if (this.autoBreakpointsEnabled) {
           this._setAutoBreakpointsEnabled(false).then(() => {
@@ -265,7 +249,7 @@ class MSXDebugSession extends DebugSession {
       }
 
       if (line !== null && line !== undefined) {
-        log(`MSX-BASIC source code line=${line}`);
+        logger.debug(`MSX-BASIC source code line=${line}`);
         this.currentLine = line;
       }
 
@@ -274,7 +258,7 @@ class MSXDebugSession extends DebugSession {
     });
 
     this.msx.on("paused", () => {
-      log("Pause event received");
+      logger.debug("Pause event received");
 
       this.sendEvent(new StoppedEvent("pause", this.threadId));
       this.sendEvent(new InvalidatedEvent(["variables"]));
@@ -363,7 +347,7 @@ class MSXDebugSession extends DebugSession {
   stackTraceRequest(response, args) {
     const frames = [];
 
-    log(`stack trace request: ${this.program}:${this.currentLine}`);
+    logger.debug(`stack trace request: ${this.program}:${this.currentLine}`);
 
     frames.push(
       new StackFrame(
@@ -405,7 +389,7 @@ class MSXDebugSession extends DebugSession {
         content: content,
       };
     } catch (err) {
-      log("sourceRequest error: " + err.toString());
+      logger.error("sourceRequest error: " + err.toString());
 
       response.success = false;
     }
@@ -432,7 +416,7 @@ class MSXDebugSession extends DebugSession {
         }
       }
     } catch (err) {
-      log(`_getBasicLineMap error: ${err.toString()}`);
+      logger.error(`_getBasicLineMap error: ${err.toString()}`);
     }
 
     return map;
@@ -554,7 +538,7 @@ class MSXDebugSession extends DebugSession {
   }
 
   async _handleEndProgram() {
-    log(`End of the user program`);
+    logger.info(`End of the user program`);
 
     this.sendEvent(new StoppedEvent("pause", this.threadId));
     this.sendEvent(

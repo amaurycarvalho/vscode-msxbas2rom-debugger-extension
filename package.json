@@ -2,7 +2,7 @@
   "name": "msxbas2rom-debugger",
   "displayName": "MSX BASIC Debugger for MSXBAS2ROM",
   "description": "Debug MSX BASIC programs compiled with MSXBAS2ROM using openMSX.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "amaurycarvalho",
   "repository": "https://github.com/amaurycarvalho/vscode-msxbas2rom-debugger-extension",
   "license": "MIT",
@@ -42,12 +42,17 @@
         "msxDebugger.enableDebugLogs": {
           "type": "boolean",
           "default": false,
-          "description": "Enable debug logging for MSX debugger (writes to output channel and /tmp/msx-debug.log)."
+          "description": "Enable debug logging for MSX debugger (writes to output channel and msx-debug.log)."
         },
         "msxDebugger.enableVerboseLogs": {
           "type": "boolean",
           "default": false,
           "description": "Enable verbose logging for MSX debugger (detailed protocol and memory reads)."
+        },
+        "msxDebugger.logPath": {
+          "type": "string",
+          "default": "%TEMP%",
+          "description": "Folder that will contain msx-debug.log. Defaults to %TEMP% on Windows and /tmp on other systems."
         }
       }
     },
@@ -133,8 +138,16 @@
                 "description": "Path to openMSX"
               },
               "enableDebugLogs": {
-                "type": "string",
+                "type": "boolean",
                 "description": "Enable debug logging for MSX debugger"
+              },
+              "enableVerboseLogs": {
+                "type": "boolean",
+                "description": "Enable verbose logging for MSX debugger"
+              },
+              "logPath": {
+                "type": "string",
+                "description": "Folder that will contain msx-debug.log"
               }
             }
           }
