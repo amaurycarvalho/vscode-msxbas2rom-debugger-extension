@@ -2,7 +2,7 @@
   "name": "msxbas2rom-debugger",
   "displayName": "MSX BASIC Debugger for MSXBAS2ROM",
   "description": "Debug MSX BASIC programs compiled with MSXBAS2ROM using openMSX.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "amaurycarvalho",
   "repository": "https://github.com/amaurycarvalho/vscode-msxbas2rom-debugger-extension",
   "license": "MIT",

@@ -457,6 +457,16 @@ class OpenMSXControl extends EventEmitter {
   }
 
   //--------------------------------------------------
+  // Registers
+  //--------------------------------------------------
+
+  async getRegister(name) {
+    const regName = String(name || "").trim();
+    if (!regName) return 0;
+    return await this._sendAndParseInt(`reg ${regName}`);
+  }
+
+  //--------------------------------------------------
   // Shutdown
   //--------------------------------------------------
 

@@ -51,6 +51,13 @@ class MSXDebugSession extends DebugSession {
     this.sourceHandles = new Handles();
     this.variableHandles = new Handles();
     this.variablesRoot = this.variableHandles.create({ kind: "root" });
+
+    this.startDebuggingSP = null;
+    this.lastPausedSP = null;
+    this.cachedStackFrames = null;
+    this.basicLineAddressList = null;
+    this.editorLineByBasicLine = null;
+    this.basicLineByEditorLine = null;
   }
 
   //--------------------------------------------------
@@ -166,7 +173,7 @@ class MSXDebugSession extends DebugSession {
     await this.msx.send("set power on");
 
     //--------------------------------------------------
-    // auto breakpoints (all LIN_* and END_PGM)
+    // auto breakpoints (all LIN_* and END_STMT)
     //--------------------------------------------------
 
     const linesMap = this._getBasicLineMap(this.program);
@@ -209,7 +216,7 @@ class MSXDebugSession extends DebugSession {
       });
     } else {
       logger.error(
-        "END_PGM not found in CDB; endProgram breakpoint not created",
+        "END_STMT not found in CDB; endProgram breakpoint not created",
       );
     }
 
@@ -221,7 +228,7 @@ class MSXDebugSession extends DebugSession {
     // openMSX events
     //--------------------------------------------------
 
-    this.msx.on("breakpointHit", (info) => {
+    this.msx.on("breakpointHit", async (info) => {
       const id = parseInt(info.id) || 1;
       const addr = parseInt(info.address) || 0;
 
@@ -253,14 +260,43 @@ class MSXDebugSession extends DebugSession {
       if (line !== null && line !== undefined) {
         logger.debug(`MSX-BASIC source code line=${line}`);
         this.currentLine = line;
+        this.cachedStackFrames = null;
+      }
+
+      if (
+        this.startDebuggingSP === null ||
+        this.startDebuggingSP === undefined
+      ) {
+        try {
+          const sp = await this.msx.getRegister("SP");
+          this.startDebuggingSP = sp;
+          this.lastPausedSP = sp;
+          this.cachedStackFrames = null;
+        } catch (err) {
+          logger.error(`Failed to read SP on breakpoint: ${err}`);
+        }
       }
 
       this.sendEvent(new StoppedEvent("breakpoint", this.threadId));
       this.sendEvent(new InvalidatedEvent(["variables"]));
     });
 
-    this.msx.on("paused", () => {
+    this.msx.on("paused", async () => {
       logger.debug("Pause event received");
+
+      if (
+        this.startDebuggingSP === null ||
+        this.startDebuggingSP === undefined
+      ) {
+        try {
+          const sp = await this.msx.getRegister("SP");
+          this.startDebuggingSP = sp;
+          this.lastPausedSP = sp;
+          this.cachedStackFrames = null;
+        } catch (err) {
+          logger.error(`Failed to read SP on pause: ${err}`);
+        }
+      }
 
       this.sendEvent(new StoppedEvent("pause", this.threadId));
       this.sendEvent(new InvalidatedEvent(["variables"]));
@@ -346,20 +382,10 @@ class MSXDebugSession extends DebugSession {
   // STACK TRACE
   //--------------------------------------------------
 
-  stackTraceRequest(response, args) {
-    const frames = [];
-
+  async stackTraceRequest(response, args) {
     logger.debug(`stack trace request: ${this.program}:${this.currentLine}`);
 
-    frames.push(
-      new StackFrame(
-        1,
-        "MSX BASIC",
-        new Source(path.basename(this.program), this.program),
-        this.currentLine,
-        0,
-      ),
-    );
+    const frames = await this._buildStackFrames();
 
     response.body = {
       stackFrames: frames,
@@ -422,6 +448,151 @@ class MSXDebugSession extends DebugSession {
     }
 
     return map;
+  }
+
+  _getEditorLineByBasicLine(sourcePath) {
+    if (this.editorLineByBasicLine) return this.editorLineByBasicLine;
+
+    const linesMap = this._getBasicLineMap(sourcePath);
+    const editorLineByBasicLine = {};
+    const basicLineByEditorLine = {};
+
+    for (const editorLineStr of Object.keys(linesMap)) {
+      const editorLine = parseInt(editorLineStr, 10);
+      const basicLine = linesMap[editorLine];
+      if (basicLine !== null && basicLine !== undefined) {
+        editorLineByBasicLine[basicLine] = editorLine;
+        basicLineByEditorLine[editorLine] = basicLine;
+      }
+    }
+
+    this.editorLineByBasicLine = editorLineByBasicLine;
+    this.basicLineByEditorLine = basicLineByEditorLine;
+    return editorLineByBasicLine;
+  }
+
+  _getBasicLineAddressList() {
+    if (this.basicLineAddressList) return this.basicLineAddressList;
+
+    const lines = this.cdb ? this.cdb.getLines() : {};
+    const list = Object.keys(lines).map((basicLineStr) => ({
+      basicLine: parseInt(basicLineStr, 10),
+      address: lines[basicLineStr],
+    }));
+
+    list.sort((a, b) => a.address - b.address);
+
+    this.basicLineAddressList = list;
+    return list;
+  }
+
+  _getBasicLineBeforeAddress(callbackAddress) {
+    const list = this._getBasicLineAddressList();
+    if (!list.length) return null;
+
+    if (callbackAddress <= list[0].address) {
+      return list[0].basicLine;
+    }
+
+    const last = list[list.length - 1];
+    if (callbackAddress > last.address) {
+      return last.basicLine;
+    }
+
+    let idx = -1;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].address >= callbackAddress) {
+        idx = i;
+        break;
+      }
+    }
+
+    if (idx <= 0) return list[0].basicLine;
+    return list[idx - 1].basicLine;
+  }
+
+  async _buildStackFrames() {
+    const frames = [];
+    const source = new Source(path.basename(this.program), this.program);
+
+    const currentLine = this.currentLine || 1;
+    this._getEditorLineByBasicLine(this.program);
+    const currentBasicLine =
+      this.basicLineByEditorLine && this.basicLineByEditorLine[currentLine]
+        ? this.basicLineByEditorLine[currentLine]
+        : null;
+    const topLabel = currentBasicLine
+      ? `MSX BASIC ${currentBasicLine}`
+      : "MSX BASIC";
+
+    frames.push(new StackFrame(1, topLabel, source, currentLine, 0));
+
+    if (!this.msx || !this.cdb) {
+      this.cachedStackFrames = frames;
+      return frames;
+    }
+
+    let currentSP = null;
+    try {
+      currentSP = await this.msx.getRegister("SP");
+    } catch (err) {
+      logger.error(`Failed to read SP: ${err}`);
+      this.cachedStackFrames = frames;
+      return frames;
+    }
+
+    if (this.startDebuggingSP === null || this.startDebuggingSP === undefined) {
+      this.startDebuggingSP = currentSP;
+    }
+
+    if (
+      this.lastPausedSP !== null &&
+      currentSP === this.lastPausedSP &&
+      this.cachedStackFrames
+    ) {
+      return this.cachedStackFrames;
+    }
+
+    this.lastPausedSP = currentSP;
+
+    const callbackStackList = [];
+
+    if (currentSP < this.startDebuggingSP) {
+      let sp = currentSP;
+      let depth = 0;
+      const maxDepth = 1024;
+
+      while (sp < this.startDebuggingSP && depth < maxDepth) {
+        const callbackAddr = await this.msx.peek16(sp);
+        callbackStackList.push(callbackAddr);
+        sp += 2;
+        depth++;
+      }
+    }
+
+    const editorLineByBasicLine = this._getEditorLineByBasicLine(this.program);
+    let frameId = 2;
+
+    for (const callbackAddr of callbackStackList) {
+      const basicLine = this._getBasicLineBeforeAddress(callbackAddr);
+      if (!basicLine) continue;
+
+      const editorLine = editorLineByBasicLine[basicLine];
+      if (!editorLine) continue;
+
+      frames.push(
+        new StackFrame(
+          frameId++,
+          `MSX BASIC ${basicLine}`,
+          source,
+          editorLine,
+          0,
+        ),
+      );
+    }
+
+    this.cachedStackFrames = frames;
+    return frames;
   }
 
   //--------------------------------------------------

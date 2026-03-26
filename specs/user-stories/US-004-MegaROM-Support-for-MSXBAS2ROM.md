@@ -37,5 +37,36 @@ And breakpoints in the current bank continue to function
 
 Use the following guidelines:
 
-- Current active segment is found at 0xC023 (8 bits unsigned), read it with `peek 0xC023`;
-- MSX-BASIC GOSUBs always push 3 integers to the Z80 call stack (SP): callback megaROM helper address, followed by segment and address to the next MSX-BASIC line to return. You can read it using `peek_u16 [reg SP]`.
+- MSX-BASIC source code compiled in megaROM format will have the ROM format embedded in the name suffix (e.g., `test10.bas` will be compiled to `test10[ASCII8].rom` or `test10[KonamiSCC].rom`);
+- The same will happen to resulting .CDB file name (e.g.: `test10[ASCII8].cdb`);
+- All MSX-BASIC line addresses are expressed in the CDB file in 6 digits hexadecimal format, with the two first digits corresponding to megaROM segment number followed by 4 digits for the real address (see example below);
+- Variables addresses are expressed in 6 digits as well, but with the 2 first digits zeros (can be discarded);
+- MegaROM current active segment number is found at 0xC023 (8 bits unsigned, read it with `peek 0xC023`);
+- Relating to stack trace, megaROM GOSUBs always push the following 3 integers to the Z80 call stack (SP): (1) callback megaROM helper address, followed by (2) segment number and (3) address to the next MSX-BASIC line to return. You can read them using `peek_u16 [reg SP]`.
+
+At example below, `LIN_10` address is 0x8490 at megaROM segment 0x02:
+
+```
+L:C$test53.bas$9$0$0
+S:G$LIN_10$0_0$0
+L:G$LIN_10$0_0$0:028490
+```
+
+To create the breakpoint in the emulator:
+
+```
+debug breakpoint create -address <address> -condition {[pc_in_slot X X <segment>]}
+```
+
+Example:
+
+```
+debug breakpoint create -address 0x8490 -condition {[pc_in_slot X X 0x02]}
+```
+
+Also, at example below, variable `A` address is 0xC038:
+
+```
+S:G$VAR_A$0_0$0({3}F24),G,0,0
+L:G$VAR_A$0_0$0:00C038
+```

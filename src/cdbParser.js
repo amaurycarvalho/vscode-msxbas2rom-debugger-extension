@@ -99,7 +99,11 @@ class CDBParser {
         // detect variable
         //----------------------------------
 
-        if (symbolKey.startsWith("G$VAR_")) {
+        if (
+          symbolKey.startsWith("G$VAR_") &&
+          !symbolKey.startsWith("G$VAR_FOR_TO_") &&
+          !symbolKey.startsWith("G$VAR_FOR_STEP_")
+        ) {
           const name = this.extractVariableName(symbolRaw);
 
           const arrayInfo = this.extractArrayInfo(symbolRaw);
@@ -151,8 +155,9 @@ class CDBParser {
         // Program start and end
         //----------------------------------
 
-        if (symbol.startsWith("G$END_PGM")) {
-          this.endProgramAddress = addr;
+        if (symbol.startsWith("G$END_STMT")) {
+          // @remarks discard the 'jr' instruction at the beggining of end statement Z80 code
+          this.endProgramAddress = addr + 2;
         }
 
         //----------------------------------
@@ -175,7 +180,11 @@ class CDBParser {
         // variables
         //----------------------------------
 
-        if (symbol.startsWith("G$VAR_")) {
+        if (
+          symbol.startsWith("G$VAR_") &&
+          !symbol.startsWith("G$VAR_FOR_TO_") &&
+          !symbol.startsWith("G$VAR_FOR_STEP_")
+        ) {
           const name = this.extractVariableName(symbolRaw);
 
           if (this.variables[symbol]) {

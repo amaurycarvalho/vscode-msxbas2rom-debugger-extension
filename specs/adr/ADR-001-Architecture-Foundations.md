@@ -98,7 +98,7 @@ New releases needs to be registered as a new branch in the repository:
 ```
 git checkout -b release/v0.0.0
 git push origin release/v0.0.0
-git switch master
+git switch main
 ```
 
 See `CONTRIBUTING.md` for more information.

@@ -21,8 +21,8 @@ test("parses BASIC lines, variables and end address", () => {
     "L:G$VAR_C!F24:0030",
     "S:G$LIN_10",
     "L:G$LIN_10:0100",
-    "S:G$END_PGM",
-    "L:G$END_PGM:0FFF",
+    "S:G$END_STMT",
+    "L:G$END_STMT:0FFF",
   ].join("\n");
 
   fs.writeFileSync(filePath, content, "utf8");
@@ -30,7 +30,7 @@ test("parses BASIC lines, variables and end address", () => {
   const parser = new CDBParser(filePath);
 
   assert.equal(parser.getAddressForLine(10), 0x100);
-  assert.equal(parser.getEndProgramAddress(), 0x0fff);
+  assert.equal(parser.getEndProgramAddress(), 0x1001);
 
   const vars = parser.getVariables();
   assert.equal(vars["A%SI"].type, "int16");
