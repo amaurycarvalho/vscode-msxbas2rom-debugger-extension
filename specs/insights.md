@@ -36,6 +36,7 @@ If an insight registered here is not relevant any more, remove it.
 ### 5. Performance Observations
 
 ### 6. Testing Insights
+- Array expansion in the Variables view can be unit-tested by driving `variablesRequest` with mock CDB data and openMSX memory readers.
 
 ### 7. Refactoring Opportunities
 

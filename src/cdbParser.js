@@ -30,7 +30,7 @@ class CDBParser {
 
     this.lines = {}; // BASIC line -> address
     this.endProgramAddress = null;
-    this.variables = {}; // symbol -> {address,type,name}
+    this.variables = {}; // symbol -> {address,type,name,arrayInfo,raw}
     this.symbols = {}; // raw symbols
     this.types = {}; // type definitions
 
@@ -102,11 +102,20 @@ class CDBParser {
         if (symbolKey.startsWith("G$VAR_")) {
           const name = this.extractVariableName(symbolRaw);
 
+          const arrayInfo = this.extractArrayInfo(symbolRaw);
+          const baseType = this.extractType(symbolRaw);
+          const type =
+            arrayInfo && arrayInfo.elementType !== "unknown"
+              ? `${arrayInfo.elementType}-array`
+              : baseType;
+
           this.variables[symbolKey] = {
             symbol: symbolKey,
             name,
             address: null,
-            type: this.extractType(symbolRaw),
+            type,
+            arrayInfo,
+            raw: symbolRaw,
           };
 
           logger.debug(
@@ -223,6 +232,34 @@ class CDBParser {
     if (symbol.includes("!")) return "float24";
 
     return "unknown";
+  }
+
+  extractArrayInfo(symbol) {
+    const match = symbol.match(/\(\{(\d+)\}([^)]+)\)/);
+    if (!match) return null;
+
+    const totalSize = parseInt(match[1], 10);
+    const parts = match[2].split(",").map((p) => p.trim());
+    const dims = parts
+      .filter((p) => p.startsWith("DA"))
+      .map((p) => {
+        const dimMatch = p.match(/DA(\d+)d/);
+        return dimMatch ? parseInt(dimMatch[1], 10) : null;
+      })
+      .filter((v) => v !== null);
+
+    if (dims.length === 0) return null;
+
+    let elementType = "unknown";
+    if (parts.some((p) => p.includes("SI"))) elementType = "int16";
+    else if (parts.some((p) => p.includes("PSTR"))) elementType = "pstring";
+    else if (parts.some((p) => p.includes("F24"))) elementType = "float24";
+
+    return {
+      totalSize,
+      dims,
+      elementType,
+    };
   }
 
   //----------------------------------

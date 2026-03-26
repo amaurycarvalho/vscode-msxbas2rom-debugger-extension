@@ -49,6 +49,8 @@ class MSXDebugSession extends DebugSession {
     this.emuBreakpointInfo = new Map(); // id -> { kind, source, line, basicLine }
 
     this.sourceHandles = new Handles();
+    this.variableHandles = new Handles();
+    this.variablesRoot = this.variableHandles.create({ kind: "root" });
   }
 
   //--------------------------------------------------
@@ -427,7 +429,7 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   scopesRequest(response, args) {
-    const scopes = [new Scope("Variables", 1, false)];
+    const scopes = [new Scope("Variables", this.variablesRoot, false)];
 
     response.body = {
       scopes,
@@ -441,26 +443,65 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   async variablesRequest(response, args) {
-    const vars = [];
+    const handle = this.variableHandles.get(args.variablesReference);
 
-    const allVars = this.cdb.getVariables();
+    if (!handle || handle.kind === "root") {
+      const vars = [];
+      const allVars = this.cdb.getVariables();
 
-    for (const name in allVars) {
-      const v = allVars[name];
+      for (const name in allVars) {
+        const v = allVars[name];
 
-      const value = await VariableDecoder.decode(v, this.msx);
+        if (v.arrayInfo) {
+          const dims = v.arrayInfo.dims;
+          const elementType = v.arrayInfo.elementType;
+          const ref = this.variableHandles.create({
+            kind: "array",
+            variable: v,
+            dims,
+            elementType,
+          });
 
-      vars.push({
-        name: name,
-        value: value.toString(),
-        variablesReference: 0,
-      });
+          vars.push({
+            name,
+            value: `${elementType}[${dims.join("x")}]`,
+            variablesReference: ref,
+          });
+          continue;
+        }
+
+        const value = await VariableDecoder.decode(v, this.msx);
+
+        vars.push({
+          name: name,
+          value: value.toString(),
+          variablesReference: 0,
+        });
+      }
+
+      response.body = {
+        variables: vars,
+      };
+
+      this.sendResponse(response);
+      return;
     }
 
-    response.body = {
-      variables: vars,
-    };
+    if (handle.kind === "array") {
+      const vars = await this._expandArray(handle);
+      response.body = { variables: vars };
+      this.sendResponse(response);
+      return;
+    }
 
+    if (handle.kind === "array-row") {
+      const vars = await this._expandArrayRow(handle);
+      response.body = { variables: vars };
+      this.sendResponse(response);
+      return;
+    }
+
+    response.body = { variables: [] };
     this.sendResponse(response);
   }
 
@@ -559,6 +600,108 @@ class MSXDebugSession extends DebugSession {
         await this.msx.disableBreakpoint(id);
       }
     }
+  }
+
+  //--------------------------------------------------
+  // Array expansion helpers
+  //--------------------------------------------------
+
+  async _expandArray(handle) {
+    const vars = [];
+    const { variable, dims, elementType } = handle;
+
+    if (!dims || dims.length === 0) return vars;
+
+    const elementSize = this._getElementSize(elementType);
+    if (elementSize <= 0) return vars;
+
+    if (dims.length === 1 || dims[1] === 1) {
+      const count = dims[0];
+      for (let i = 0; i < count; i++) {
+        const value = await this._decodeElementAt(
+          elementType,
+          variable.address + i * elementSize,
+        );
+        vars.push({
+          name: `${i}`,
+          value: value.toString(),
+          variablesReference: 0,
+        });
+      }
+
+      return vars;
+    }
+
+    const xSize = dims[0];
+    const ySize = dims[1];
+
+    for (let y = 0; y < ySize; y++) {
+      const ref = this.variableHandles.create({
+        kind: "array-row",
+        variable,
+        dims,
+        rowIndex: y,
+        elementType,
+      });
+
+      vars.push({
+        name: `${y}`,
+        value: `${elementType}[${xSize}]`,
+        variablesReference: ref,
+      });
+    }
+
+    return vars;
+  }
+
+  async _expandArrayRow(handle) {
+    const vars = [];
+    const { variable, dims, rowIndex, elementType } = handle;
+
+    if (!dims || dims.length < 2) return vars;
+
+    const xSize = dims[0];
+    const elementSize = this._getElementSize(elementType);
+    if (elementSize <= 0) return vars;
+    const rowOffset = rowIndex * xSize * elementSize;
+
+    for (let x = 0; x < xSize; x++) {
+      const value = await this._decodeElementAt(
+        elementType,
+        variable.address + rowOffset + x * elementSize,
+      );
+
+      vars.push({
+        name: `${x}`,
+        value: value.toString(),
+        variablesReference: 0,
+      });
+    }
+
+    return vars;
+  }
+
+  _getElementSize(elementType) {
+    switch (elementType) {
+      case "int16":
+        return 2;
+      case "float24":
+        return 3;
+      case "pstring":
+        return 256;
+      default:
+        return 0;
+    }
+  }
+
+  async _decodeElementAt(elementType, address) {
+    const variable = {
+      type: elementType,
+      address,
+      symbol: "arrayElement",
+    };
+
+    return await VariableDecoder.decode(variable, this.msx);
   }
 }
 

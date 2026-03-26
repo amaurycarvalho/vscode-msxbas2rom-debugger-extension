@@ -80,3 +80,28 @@ test("getVariables disambiguates duplicated names", () => {
   assert.ok(vars.D);
   assert.ok(vars["D#2"]);
 });
+
+test("parses integer array metadata", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-"));
+  const filePath = path.join(tmpDir, "array.cdb");
+
+  const content = [
+    "S:G$VAR_B$0_0$0({6}DA3d,DA1d,SI:B),G,0,0",
+    "L:G$VAR_B$0_0$0:C062",
+    "S:G$VAR_C$0_0$0({24}DA4d,DA3d,SI:B),G,0,0",
+    "L:G$VAR_C$0_0$0:C04A",
+  ].join("\n");
+
+  fs.writeFileSync(filePath, content, "utf8");
+
+  const parser = new CDBParser(filePath);
+  const vars = parser.getVariables();
+
+  assert.equal(vars.B.type, "int16-array");
+  assert.deepEqual(vars.B.arrayInfo.dims, [3, 1]);
+  assert.equal(vars.B.arrayInfo.elementType, "int16");
+
+  assert.equal(vars.C.type, "int16-array");
+  assert.deepEqual(vars.C.arrayInfo.dims, [4, 3]);
+  assert.equal(vars.C.arrayInfo.elementType, "int16");
+});
