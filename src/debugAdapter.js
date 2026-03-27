@@ -41,6 +41,7 @@ class MSXDebugSession extends DebugSession {
 
     this.debuggingFlag = false;
     this.autoBreakpointsEnabled = false;
+    this.debuggingRunning = false;
 
     this.userBreakpointIdsBySource = new Map(); // source -> [id]
     this.userBreakpointsBySource = new Map(); // source -> Set(line)
@@ -58,6 +59,8 @@ class MSXDebugSession extends DebugSession {
     this.basicLineAddressList = null;
     this.editorLineByBasicLine = null;
     this.basicLineByEditorLine = null;
+    this.currentStackTracingLine = 0;
+    this.endBpId = null;
   }
 
   //--------------------------------------------------
@@ -207,8 +210,8 @@ class MSXDebugSession extends DebugSession {
 
     const endAddr = this.cdb.getEndProgramAddress();
     if (endAddr !== null && endAddr !== undefined) {
-      const endId = await this.msx.setBreakpoint(endAddr);
-      this.emuBreakpointInfo.set(endId, {
+      this.endBpId = await this.msx.setBreakpoint(endAddr);
+      this.emuBreakpointInfo.set(this.endBpId, {
         kind: "end",
         source: this.program,
         line: null,
@@ -223,6 +226,9 @@ class MSXDebugSession extends DebugSession {
     // Start debugging as if Pause is active: stop at the first auto breakpoint.
     this.debuggingFlag = true;
     await this._setAutoBreakpointsEnabled(true);
+
+    logger.debug("Debugging is running");
+    this.debuggingRunning = true;
 
     //--------------------------------------------------
     // openMSX events
@@ -278,7 +284,7 @@ class MSXDebugSession extends DebugSession {
       }
 
       this.sendEvent(new StoppedEvent("breakpoint", this.threadId));
-      this.sendEvent(new InvalidatedEvent(["variables"]));
+      //this.sendEvent(new InvalidatedEvent(["variables"]));
     });
 
     this.msx.on("paused", async () => {
@@ -299,7 +305,7 @@ class MSXDebugSession extends DebugSession {
       }
 
       this.sendEvent(new StoppedEvent("pause", this.threadId));
-      this.sendEvent(new InvalidatedEvent(["variables"]));
+      //this.sendEvent(new InvalidatedEvent(["variables"]));
     });
 
     this.msx.on("endProgram", async (info) => {
@@ -382,8 +388,24 @@ class MSXDebugSession extends DebugSession {
   // STACK TRACE
   //--------------------------------------------------
 
-  async stackTraceRequest(response, args) {
-    logger.debug(`stack trace request: ${this.program}:${this.currentLine}`);
+  async stackTraceRequest(response, args, request) {
+    if (!this.debuggingRunning || !this.debuggingFlag)
+      super.stackTraceRequest(response, args, request);
+
+    if (this.currentLine == this.currentStackTracingLine) {
+      logger.debug(`stack trace request for same line (ignored)`);
+      if (this.cachedStackFrames) {
+        response.body = {
+          stackFrames: this.cachedStackFrames,
+          totalFrames: this.cachedStackFrames.length,
+        };
+        this.sendResponse(response);
+        return;
+      }
+    }
+    this.currentStackTracingLine = this.currentLine;
+
+    logger.debug(`stack trace request for line: ${this.currentLine}`);
 
     const frames = await this._buildStackFrames();
 
@@ -527,7 +549,7 @@ class MSXDebugSession extends DebugSession {
 
     frames.push(new StackFrame(1, topLabel, source, currentLine, 0));
 
-    if (!this.msx || !this.cdb) {
+    if (!this.msx || !this.cdb || !this.debuggingFlag) {
       this.cachedStackFrames = frames;
       return frames;
     }
@@ -560,11 +582,17 @@ class MSXDebugSession extends DebugSession {
     if (currentSP < this.startDebuggingSP) {
       let sp = currentSP;
       let depth = 0;
-      const maxDepth = 1024;
+      const maxDepth = 60;
 
       while (sp < this.startDebuggingSP && depth < maxDepth) {
-        const callbackAddr = await this.msx.peek16(sp);
-        callbackStackList.push(callbackAddr);
+        try {
+          const callbackAddr = await this.msx.peek16(sp);
+          callbackStackList.push(callbackAddr);
+        } catch (err) {
+          logger.error(`Failed to peek SP: ${err}`);
+          this.cachedStackFrames = frames;
+          return frames;
+        }
         sp += 2;
         depth++;
       }
@@ -573,6 +601,8 @@ class MSXDebugSession extends DebugSession {
     const editorLineByBasicLine = this._getEditorLineByBasicLine(this.program);
     let frameId = 2;
 
+    logger.debug(`stack top label: ${topLabel}`);
+
     for (const callbackAddr of callbackStackList) {
       const basicLine = this._getBasicLineBeforeAddress(callbackAddr);
       if (!basicLine) continue;
@@ -580,15 +610,10 @@ class MSXDebugSession extends DebugSession {
       const editorLine = editorLineByBasicLine[basicLine];
       if (!editorLine) continue;
 
-      frames.push(
-        new StackFrame(
-          frameId++,
-          `MSX BASIC ${basicLine}`,
-          source,
-          editorLine,
-          0,
-        ),
-      );
+      const lineLabel = `MSX BASIC ${basicLine}`;
+      logger.debug(`stack line label: ${lineLabel}`);
+
+      frames.push(new StackFrame(frameId++, lineLabel, source, editorLine, 0));
     }
 
     this.cachedStackFrames = frames;
@@ -695,7 +720,6 @@ class MSXDebugSession extends DebugSession {
   async nextRequest(response, args) {
     this.debuggingFlag = true;
     await this._setAutoBreakpointsEnabled(true);
-    //this.msx.step();
     this.msx.continue();
 
     this.sendResponse(response);
@@ -717,8 +741,8 @@ class MSXDebugSession extends DebugSession {
 
   async pauseRequest(response, args) {
     await this._setAutoBreakpointsEnabled(true);
+
     this.debuggingFlag = true;
-    //this.msx.break();
 
     this.sendResponse(response);
 
@@ -751,6 +775,7 @@ class MSXDebugSession extends DebugSession {
 
   async _handleEndProgram() {
     logger.info(`End of the user program`);
+    this.debuggingRunning = false;
 
     this.sendEvent(new StoppedEvent("pause", this.threadId));
     this.sendEvent(
@@ -764,12 +789,11 @@ class MSXDebugSession extends DebugSession {
     if (this.autoBreakpointsEnabled === enabled) return;
     this.autoBreakpointsEnabled = enabled;
 
-    for (const id of this.autoBreakpointIds) {
-      if (enabled) {
-        await this.msx.enableBreakpoint(id);
-      } else {
-        await this.msx.disableBreakpoint(id);
-      }
+    if (enabled) {
+      await this.msx.enableAllBreakpoints();
+    } else {
+      await this.msx.disableAllBreakpoints();
+      if (this.endBpId) await this.msx.enableBreakpoint(this.endBpId);
     }
   }
 

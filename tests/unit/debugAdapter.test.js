@@ -14,7 +14,7 @@ test("_getBasicLineMap extracts BASIC line numbers", () => {
   const filePath = path.join(tmpDir, "test.bas");
   fs.writeFileSync(
     filePath,
-    ["10 PRINT \"A\"", "  20 GOTO 10", "REM no line here"].join("\n"),
+    ['10 PRINT "A"', "  20 GOTO 10", "REM no line here"].join("\n"),
     "utf8",
   );
 
@@ -37,17 +37,18 @@ test("_setAutoBreakpointsEnabled toggles emulator breakpoints", async () => {
   const disabledCalls = [];
 
   session.msx = {
-    enableBreakpoint: async (id) => enabledCalls.push(id),
-    disableBreakpoint: async (id) => disabledCalls.push(id),
+    enableAllBreakpoints: async () => enabledCalls.push(1),
+    disableAllBreakpoints: async () => disabledCalls.push(2),
+    enableBreakpoint: async (id) => disabledCalls.push(id),
   };
 
-  session.autoBreakpointIds = new Set([1, 2, 3]);
+  session.endBpId = 3;
 
   await session._setAutoBreakpointsEnabled(true);
-  assert.deepEqual(enabledCalls.sort(), [1, 2, 3]);
+  assert.deepEqual(enabledCalls.sort(), [1]);
 
   await session._setAutoBreakpointsEnabled(false);
-  assert.deepEqual(disabledCalls.sort(), [1, 2, 3]);
+  assert.deepEqual(disabledCalls.sort(), [2, 3]);
 });
 
 test("_handleEndProgram sends stop and endProgram events", async () => {
@@ -80,7 +81,7 @@ test("variablesRequest expands int16 array variables", async () => {
 
   session.msx = {
     peekS16: async (address) =>
-      ({ 0x1000: 1, 0x1002: 2, 0x1004: 3 }[address] ?? 0),
+      ({ 0x1000: 1, 0x1002: 2, 0x1004: 3 })[address] ?? 0,
   };
 
   await session.variablesRequest({ body: {} }, { variablesReference: 0 });

@@ -92,6 +92,8 @@ class OpenMSXControl extends EventEmitter {
     this.readyEmitted = false;
     this.openmsxPath = openmsxPath;
     this.romPath = romPath;
+    this.queue = [];
+    this.processing = false;
   }
 
   //--------------------------------------------------
@@ -270,6 +272,32 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   send(command) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ command, resolve, reject });
+      this._processQueue();
+    });
+  }
+
+  async _processQueue() {
+    if (this.processing) return;
+    if (this.queue.length === 0) return;
+
+    this.processing = true;
+
+    const { command, resolve, reject } = this.queue.shift();
+
+    try {
+      const result = await this._sendInternal(command);
+      resolve(result);
+    } catch (err) {
+      reject(err);
+    } finally {
+      this.processing = false;
+      this._processQueue(); // processa próximo
+    }
+  }
+
+  _sendInternal(command) {
     return new Promise((resolve) => {
       this.pendingReplies.push(resolve);
 
@@ -279,6 +307,13 @@ class OpenMSXControl extends EventEmitter {
 
       this.proc.stdin.write(cmd);
     });
+  }
+
+  flushQueue() {
+    while (this.queue.length) {
+      const item = this.queue.shift();
+      item.reject(new Error("Queue cleared"));
+    }
   }
 
   //--------------------------------------------------
@@ -334,10 +369,26 @@ class OpenMSXControl extends EventEmitter {
     return await this.send(cmd);
   }
 
+  async enableAllBreakpoints() {
+    logger.debug(`enableAllBreakpoints`);
+
+    const cmd = `foreach {id config} [debug breakpoint list] { debug breakpoint configure $id -enabled 1 }`;
+
+    return await this.send(cmd);
+  }
+
   async enableBreakpoint(id) {
     logger.debug(`enableBreakpoint ${id}`);
 
     const cmd = `debug breakpoint configure bp#${id} -enabled 1`;
+
+    return await this.send(cmd);
+  }
+
+  async disableAllBreakpoints() {
+    logger.debug(`disableAllBreakpoints`);
+
+    const cmd = `foreach {id config} [debug breakpoint list] { debug breakpoint configure $id -enabled 0 }`;
 
     return await this.send(cmd);
   }
