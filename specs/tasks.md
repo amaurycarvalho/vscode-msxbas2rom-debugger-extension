@@ -9,5 +9,5 @@
 - [x] [US-002] Implement integer array support;
 - [x] [US-002] Implement string array support;
 - [x] [US-002] Implement single/double array support;
-- [ ] [US-003] Implement stack trace;
+- [x] [US-003] Implement stack trace;
 - [ ] [US-004] Implement megaROM support.
