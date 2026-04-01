@@ -6,7 +6,9 @@ const Module = require("node:module");
 process.env.NODE_PATH = path.join(__dirname, "stubs");
 Module._initPaths();
 
-const { MSXBasicSemanticTokensProvider } = require("../../src/semanticTokens");
+const {
+  MSXBasicSemanticTokensProvider,
+} = require("../../src/shared/vscode/semanticTokens");
 
 test("semantic tokens include keywords, numbers and strings", () => {
   const provider = new MSXBasicSemanticTokensProvider();
@@ -29,4 +31,3 @@ test("semantic tokens include keywords, numbers and strings", () => {
   assert.equal(keywordToken.char, 3);
   assert.equal(keywordToken.length, 5);
 });
-

@@ -5,7 +5,9 @@ const os = require("node:os");
 const path = require("node:path");
 
 process.env.MSX_UNIT_TEST = "1";
-const { MSXDebugSession } = require("../../src/debugAdapter");
+const {
+  MSXDebugSession,
+} = require("../../src/application/adapter/debugAdapter");
 
 test("_getBasicLineMap extracts BASIC line numbers", () => {
   const session = new MSXDebugSession();
@@ -36,10 +38,12 @@ test("_setAutoBreakpointsEnabled toggles emulator breakpoints", async () => {
   const enabledCalls = [];
   const disabledCalls = [];
 
-  session.msx = {
-    enableAllBreakpoints: async () => enabledCalls.push(1),
-    disableAllBreakpoints: async () => disabledCalls.push(2),
-    enableBreakpoint: async (id) => disabledCalls.push(id),
+  session.cmd = {
+    breakpoint: {
+      enableAll: async () => enabledCalls.push(1),
+      disableAll: async () => disabledCalls.push(2),
+      enable: async (id) => disabledCalls.push(id),
+    },
   };
 
   session.endBpId = 3;

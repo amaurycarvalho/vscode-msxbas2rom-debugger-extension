@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const CDBParser = require("../../src/cdbParser");
+const CDBParser = require("../../src/shared/parser/cdbParser");
 
 test("parses BASIC lines, variables and end address", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-"));

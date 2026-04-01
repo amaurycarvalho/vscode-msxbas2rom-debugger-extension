@@ -2,12 +2,17 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Clean",
+      "type": "shell",
+      "command": "npm run clean",
+      "group": {
+        "kind": "none"
+      }
+    },
+    {
       "label": "Build",
       "type": "shell",
-      "command": "npx vsce package",
-      "windows": {
-        "command": "npx vsce package"
-      },
+      "command": "npm run package",
       "group": {
         "kind": "build",
         "isDefault": true
@@ -25,10 +30,7 @@
     {
       "label": "Package scanning check",
       "type": "shell",
-      "command": "npm update package; npm audit fix; npx vsce ls",
-      "windows": {
-        "command": "npm update package; npm audit fix; npx vsce ls"
-      },
+      "command": "npm run scan",
       "group": {
         "kind": "none"
       },
@@ -46,9 +48,6 @@
       "label": "Test",
       "type": "shell",
       "command": "npm test",
-      "windows": {
-        "command": "npm test"
-      },
       "group": {
         "kind": "test",
         "isDefault": true

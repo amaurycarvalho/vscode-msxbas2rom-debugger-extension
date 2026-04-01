@@ -5,8 +5,11 @@ const path = require("path");
 const fs = require("fs");
 
 const { DebugAdapterExecutable } = require("vscode");
-const { MSXBasicSemanticTokensProvider, legend } = require("./semanticTokens");
-const Logger = require("./logger");
+const {
+  MSXBasicSemanticTokensProvider,
+  legend,
+} = require("../../shared/vscode/semanticTokens");
+const Logger = require("../../shared/logger/logger");
 
 //--------------------------------------------------
 // Logging
@@ -176,7 +179,14 @@ function activate(context) {
 //--------------------------------------------------
 
 function copyTemplate(context, filename, targetDir) {
-  const src = path.join(context.extensionPath, "src", "templates", filename);
+  const src = path.join(
+    context.extensionPath,
+    "src",
+    "shared",
+    "vscode",
+    "templates",
+    filename,
+  );
   const dest = path.join(targetDir, filename);
 
   if (fs.existsSync(dest)) return;
@@ -245,6 +255,8 @@ class MSXDebugAdapterDescriptorFactory {
     const adapterPath = path.join(
       this.context.extensionPath,
       "src",
+      "application",
+      "adapter",
       "debugAdapter.js",
     );
 

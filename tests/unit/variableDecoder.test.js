@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const VariableDecoder = require("../../src/variableDecoder");
+const VariableDecoder = require("../../src/shared/decoder/variableDecoder");
 
 test("decode int16", async () => {
   const emulator = {

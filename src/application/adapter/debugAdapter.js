@@ -15,10 +15,11 @@ const {
   Event,
 } = require("vscode-debugadapter");
 
-const CDBParser = require("./cdbParser");
-const OpenMSXControl = require("./openmsxControl");
-const VariableDecoder = require("./variableDecoder");
-const Logger = require("./logger");
+const CDBParser = require("../../shared/parser/cdbParser");
+const DebugService = require("../services/debugService");
+const OpenMSXControl = require("../../infrastructure/openmsx/openmsxControl");
+const VariableDecoder = require("../../shared/decoder/variableDecoder");
+const Logger = require("../../shared/logger/logger");
 
 const fs = require("fs");
 const path = require("path");
@@ -38,8 +39,9 @@ class MSXDebugSession extends DebugSession {
 
     this.msx = null;
     this.cdb = null;
+    this.cmd = null;
 
-    this.debuggingFlag = false;
+    this.debuggingActive = false;
     this.autoBreakpointsEnabled = false;
     this.debuggingRunning = false;
 
@@ -166,14 +168,14 @@ class MSXDebugSession extends DebugSession {
 
     logger.info("openMSX started");
 
-    logger.info("enabling events watching");
-    await this.msx.send("openmsx_update enable status");
+    try {
+      this.cmd = new DebugService(this.msx);
+    } catch (e) {
+      logger.error("debug service error: " + e.toString());
+      throw e;
+    }
 
-    logger.info("showing emulator screen");
-    await this.msx.send("set renderer SDLGL-PP");
-
-    logger.info("power on the machine");
-    await this.msx.send("set power on");
+    this.cmd.control.initialize();
 
     //--------------------------------------------------
     // auto breakpoints (all LIN_* and END_STMT)
@@ -197,7 +199,7 @@ class MSXDebugSession extends DebugSession {
       const addr = cdbLines[basicLineStr];
 
       const editorLine = editorLineByBasicLine[basicLine] || null;
-      const id = await this.msx.setBreakpoint(addr);
+      const id = await this.cmd.breakpoint.set(addr);
 
       this.autoBreakpointIds.add(id);
       this.emuBreakpointInfo.set(id, {
@@ -210,7 +212,7 @@ class MSXDebugSession extends DebugSession {
 
     const endAddr = this.cdb.getEndProgramAddress();
     if (endAddr !== null && endAddr !== undefined) {
-      this.endBpId = await this.msx.setBreakpoint(endAddr);
+      this.endBpId = await this.cmd.breakpoint.set(endAddr);
       this.emuBreakpointInfo.set(this.endBpId, {
         kind: "end",
         source: this.program,
@@ -224,7 +226,7 @@ class MSXDebugSession extends DebugSession {
     }
 
     // Start debugging as if Pause is active: stop at the first auto breakpoint.
-    this.debuggingFlag = true;
+    this.debuggingActive = true;
     await this._setAutoBreakpointsEnabled(true);
 
     logger.debug("Debugging is running");
@@ -252,12 +254,12 @@ class MSXDebugSession extends DebugSession {
 
       const hasUserBreakpoint = this._hasUserBreakpoint(source, line);
 
-      if (!this.debuggingFlag && !hasUserBreakpoint) {
+      if (!this.debuggingActive && !hasUserBreakpoint) {
         logger.debug(`Ignoring breakpoint id=${id} (debuggingFlag off)`);
         // Ensure auto breakpoints are disabled to avoid repeated hits
         if (this.autoBreakpointsEnabled) {
           this._setAutoBreakpointsEnabled(false).then(() => {
-            this.msx.continue();
+            this.cmd.control.resume();
           });
         }
         return;
@@ -274,7 +276,7 @@ class MSXDebugSession extends DebugSession {
         this.startDebuggingSP === undefined
       ) {
         try {
-          const sp = await this.msx.getRegister("SP");
+          const sp = await this.cmd.register.get("SP");
           this.startDebuggingSP = sp;
           this.lastPausedSP = sp;
           this.cachedStackFrames = null;
@@ -295,7 +297,7 @@ class MSXDebugSession extends DebugSession {
         this.startDebuggingSP === undefined
       ) {
         try {
-          const sp = await this.msx.getRegister("SP");
+          const sp = await this.cmd.register.get("SP");
           this.startDebuggingSP = sp;
           this.lastPausedSP = sp;
           this.cachedStackFrames = null;
@@ -337,7 +339,7 @@ class MSXDebugSession extends DebugSession {
 
     const existingIds = this.userBreakpointIdsBySource.get(source) || [];
     for (const id of existingIds) {
-      await this.msx.removeBreakpoint(id);
+      await this.cmd.breakpoint.remove(id);
       this.emuBreakpointInfo.delete(id);
     }
 
@@ -354,7 +356,7 @@ class MSXDebugSession extends DebugSession {
         basicLine !== null ? this.cdb.getAddressForLine(basicLine) : null;
 
       if (addr !== null) {
-        const id = await this.msx.setBreakpoint(addr);
+        const id = await this.cmd.breakpoint.set(addr);
 
         this.userBreakpointIdsBySource.get(source).push(id);
         this.emuBreakpointInfo.set(id, {
@@ -389,7 +391,7 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   async stackTraceRequest(response, args, request) {
-    if (!this.debuggingRunning || !this.debuggingFlag)
+    if (!this.debuggingRunning || !this.debuggingActive)
       super.stackTraceRequest(response, args, request);
 
     if (this.currentLine == this.currentStackTracingLine) {
@@ -549,14 +551,14 @@ class MSXDebugSession extends DebugSession {
 
     frames.push(new StackFrame(1, topLabel, source, currentLine, 0));
 
-    if (!this.msx || !this.cdb || !this.debuggingFlag) {
+    if (!this.msx || !this.cdb || !this.debuggingActive) {
       this.cachedStackFrames = frames;
       return frames;
     }
 
     let currentSP = null;
     try {
-      currentSP = await this.msx.getRegister("SP");
+      currentSP = await this.cmd.register.get("SP");
     } catch (err) {
       logger.error(`Failed to read SP: ${err}`);
       this.cachedStackFrames = frames;
@@ -706,9 +708,9 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   async continueRequest(response, args) {
-    this.debuggingFlag = false;
+    this.debuggingActive = false;
     await this._setAutoBreakpointsEnabled(false);
-    this.msx.continue();
+    this.cmd.control.resume();
 
     this.sendResponse(response);
   }
@@ -718,20 +720,20 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   async nextRequest(response, args) {
-    this.debuggingFlag = true;
+    this.debuggingActive = true;
     await this._setAutoBreakpointsEnabled(true);
-    this.msx.continue();
+    this.cmd.control.resume();
 
     this.sendResponse(response);
   }
 
   async stepInRequest(response, args) {
-    this.debuggingFlag = true;
+    this.debuggingActive = true;
     await this.nextRequest(response, args);
   }
 
   async stepOutRequest(response, args) {
-    this.debuggingFlag = true;
+    this.debuggingActive = true;
     await this.nextRequest(response, args);
   }
 
@@ -742,11 +744,11 @@ class MSXDebugSession extends DebugSession {
   async pauseRequest(response, args) {
     await this._setAutoBreakpointsEnabled(true);
 
-    this.debuggingFlag = true;
+    this.debuggingActive = true;
 
     this.sendResponse(response);
 
-    this.msx.continue();
+    this.cmd.control.resume();
   }
 
   //--------------------------------------------------
@@ -790,10 +792,10 @@ class MSXDebugSession extends DebugSession {
     this.autoBreakpointsEnabled = enabled;
 
     if (enabled) {
-      await this.msx.enableAllBreakpoints();
+      await this.cmd.breakpoint.enableAll();
     } else {
-      await this.msx.disableAllBreakpoints();
-      if (this.endBpId) await this.msx.enableBreakpoint(this.endBpId);
+      await this.cmd.breakpoint.disableAll();
+      if (this.endBpId) await this.cmd.breakpoint.enable(this.endBpId);
     }
   }
 

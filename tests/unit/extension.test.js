@@ -9,12 +9,12 @@ process.env.NODE_PATH = path.join(__dirname, "stubs");
 Module._initPaths();
 
 const vscode = require("vscode");
-const extension = require("../../src/extension");
+const extension = require("../../src/application/extension/extension");
 
 test("copyTemplate copies missing file", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ext-"));
   const extPath = path.join(tmpDir, "ext");
-  const tplDir = path.join(extPath, "src", "templates");
+  const tplDir = path.join(extPath, "src", "shared", "vscode", "templates");
   const workspaceDir = path.join(tmpDir, "workspace");
 
   fs.mkdirSync(tplDir, { recursive: true });
@@ -22,7 +22,11 @@ test("copyTemplate copies missing file", () => {
 
   fs.writeFileSync(path.join(tplDir, "launch.json"), "TEMPLATE", "utf8");
 
-  extension.copyTemplate({ extensionPath: extPath }, "launch.json", workspaceDir);
+  extension.copyTemplate(
+    { extensionPath: extPath },
+    "launch.json",
+    workspaceDir,
+  );
 
   const dest = path.join(workspaceDir, "launch.json");
   assert.equal(fs.readFileSync(dest, "utf8"), "TEMPLATE");
@@ -40,7 +44,11 @@ test("copyTemplate does not overwrite existing file", () => {
   fs.writeFileSync(path.join(tplDir, "launch.json"), "TEMPLATE", "utf8");
   fs.writeFileSync(path.join(workspaceDir, "launch.json"), "EXISTING", "utf8");
 
-  extension.copyTemplate({ extensionPath: extPath }, "launch.json", workspaceDir);
+  extension.copyTemplate(
+    { extensionPath: extPath },
+    "launch.json",
+    workspaceDir,
+  );
 
   const dest = path.join(workspaceDir, "launch.json");
   assert.equal(fs.readFileSync(dest, "utf8"), "EXISTING");

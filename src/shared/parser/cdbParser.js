@@ -4,7 +4,7 @@
 //
 
 const fs = require("fs");
-const Logger = require("./logger");
+const Logger = require("../logger/logger");
 
 const logger = new Logger("cdbParser");
 
@@ -48,7 +48,7 @@ class CDBParser {
 
     logger.info(`Parsing ${rows.length} rows`);
 
-    let lastSymbol = null;
+    //let lastSymbol = null;
 
     for (const r of rows) {
       const line = r.trim();
@@ -84,7 +84,7 @@ class CDBParser {
         const symbolRaw = line.substring(2).trim();
         const symbolKey = this._normalizeSymbol(symbolRaw);
 
-        lastSymbol = symbolKey;
+        //lastSymbol = symbolKey;
 
         this.symbols[symbolKey] = {
           name: symbolKey,

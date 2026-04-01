@@ -7,7 +7,7 @@ const { spawn } = require("child_process");
 const EventEmitter = require("events");
 const fs = require("fs");
 const path = require("path");
-const Logger = require("./logger");
+const Logger = require("../../shared/logger/logger");
 
 const logger = new Logger("openmsxControl");
 
@@ -268,6 +268,16 @@ class OpenMSXControl extends EventEmitter {
   }
 
   //--------------------------------------------------
+  // Send command
+  //--------------------------------------------------
+
+  async execute(command) {
+    logger.debug(command.log());
+    const raw = await this.send(command.toTCL());
+    return command.parse(raw);
+  }
+
+  //--------------------------------------------------
   // Send raw command
   //--------------------------------------------------
 
@@ -317,25 +327,6 @@ class OpenMSXControl extends EventEmitter {
   }
 
   //--------------------------------------------------
-  // Emulator control
-  //--------------------------------------------------
-
-  async continue() {
-    logger.debug("continue");
-    await this.send("debug cont");
-  }
-
-  async break() {
-    logger.debug("break");
-    await this.send("debug break");
-  }
-
-  async step() {
-    logger.debug("step");
-    await this.send("debug step");
-  }
-
-  //--------------------------------------------------
   // Breakpoints
   //--------------------------------------------------
 
@@ -344,61 +335,6 @@ class OpenMSXControl extends EventEmitter {
     this.send(
       'set bps [debug breakpoint list] ; set i [lsearch -regexp $bps "-address [reg PC]"] ; list [lindex $bps [expr {$i - 1}]] [lindex $bps $i]',
     );
-  }
-
-  async setBreakpoint(address) {
-    logger.debug(`setBreakpoint ${address}`);
-
-    const cmd = `debug set_bp ${address}`;
-
-    const result = await this.send(cmd);
-
-    const idMatch = result.match(/bp#(\d+)/);
-    const id = idMatch ? parseInt(idMatch[1]) : null;
-
-    logger.debug(`Breakpoint created id=${id}`);
-
-    return id;
-  }
-
-  async removeBreakpoint(id) {
-    logger.debug(`removeBreakpoint ${id}`);
-
-    const cmd = `debug remove_bp bp#${id}`;
-
-    return await this.send(cmd);
-  }
-
-  async enableAllBreakpoints() {
-    logger.debug(`enableAllBreakpoints`);
-
-    const cmd = `foreach {id config} [debug breakpoint list] { debug breakpoint configure $id -enabled 1 }`;
-
-    return await this.send(cmd);
-  }
-
-  async enableBreakpoint(id) {
-    logger.debug(`enableBreakpoint ${id}`);
-
-    const cmd = `debug breakpoint configure bp#${id} -enabled 1`;
-
-    return await this.send(cmd);
-  }
-
-  async disableAllBreakpoints() {
-    logger.debug(`disableAllBreakpoints`);
-
-    const cmd = `foreach {id config} [debug breakpoint list] { debug breakpoint configure $id -enabled 0 }`;
-
-    return await this.send(cmd);
-  }
-
-  async disableBreakpoint(id) {
-    logger.debug(`disableBreakpoint ${id}`);
-
-    const cmd = `debug breakpoint configure bp#${id} -enabled 0`;
-
-    return await this.send(cmd);
   }
 
   //--------------------------------------------------
@@ -505,16 +441,6 @@ class OpenMSXControl extends EventEmitter {
     const cmd = `debug read_block {Main RAM} ${this._formatAddress(address)} ${size}`;
     const result = await this.send(cmd);
     return Buffer.from(result, "latin1");
-  }
-
-  //--------------------------------------------------
-  // Registers
-  //--------------------------------------------------
-
-  async getRegister(name) {
-    const regName = String(name || "").trim();
-    if (!regName) return 0;
-    return await this._sendAndParseInt(`reg ${regName}`);
   }
 
   //--------------------------------------------------

@@ -41,7 +41,9 @@ VSCode Debugger Extension for MSXBAS2ROM
    |  |
    |  +--variableDecoder.js
    |  |
-   |  +--openmsxControl.js
+   |  +--debugService.js
+   |     |
+   |     +--openmsxControl.js
    |
    +--semanticTokens.js
    |

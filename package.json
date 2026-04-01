@@ -2,7 +2,7 @@
   "name": "msxbas2rom-debugger",
   "displayName": "MSX BASIC Debugger for MSXBAS2ROM",
   "description": "Debug MSX BASIC programs compiled with MSXBAS2ROM using openMSX.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "amaurycarvalho",
   "repository": "https://github.com/amaurycarvalho/vscode-msxbas2rom-debugger-extension",
   "license": "MIT",
@@ -24,7 +24,7 @@
     "onCommand:msx.initializeProject",
     "onLanguage:msx-basic"
   ],
-  "main": "./src/extension.js",
+  "main": "./src/application/extension/extension.js",
   "contributes": {
     "configuration": {
       "title": "MSXBAS2ROM Debugger",
@@ -73,7 +73,7 @@
       {
         "language": "msx-basic",
         "scopeName": "source.msx-basic",
-        "path": "./src/syntaxes/msx-basic.tmLanguage.json"
+        "path": "./src/shared/vscode/syntaxes/msx-basic.tmLanguage.json"
       }
     ],
     "semanticTokenTypes": [
@@ -156,12 +156,15 @@
     ]
   },
   "scripts": {
+    "clean": "rimraf dist *.vsix",
+    "package": "npm run clean && shx mkdir -p dist && npx vsce package --out dist/",
+    "scan": "npm update package && npm audit fix && npx vsce ls",
     "test": "node --test",
-    "package": "vsce package",
     "publish": "vsce publish"
   },
   "devDependencies": {
-    "@vscode/vsce": "^3.7.1"
+    "@vscode/vsce": "^3.7.1",
+    "shx": "^0.4.0"
   },
   "dependencies": {
     "vscode-debugadapter": "^1.51.0"

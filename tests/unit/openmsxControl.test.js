@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const OpenMSXControl = require("../../src/openmsxControl");
+const OpenMSXControl = require("../../src/infrastructure/openmsx/openmsxControl");
 
 test("parseHex returns expected bytes", () => {
   const ctrl = new OpenMSXControl("openmsx", "rom.rom");

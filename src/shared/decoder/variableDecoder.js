@@ -1,7 +1,7 @@
 // variableDecoder.js
 
 const fs = require("fs");
-const Logger = require("./logger");
+const Logger = require("../logger/logger");
 
 const logger = new Logger("variableDecoder");
 

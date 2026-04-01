@@ -4,5 +4,6 @@ node_modules/**
 .github/**
 tests/**
 specs/**
+dist/**
 .gitignore
 *.md
