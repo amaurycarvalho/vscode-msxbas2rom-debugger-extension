@@ -207,7 +207,7 @@ class OpenMSXControl extends EventEmitter {
       //--------------------------------------------------
       // current breakpoint reply
       //--------------------------------------------------
-      match = result.match(/bp#(\d+)\s+\{\s*-address\s+(\d+)/);
+      match = result.match(/bp#(\d+)\s+\{\s*-address\s+([0-9a-fA-Fx]+)/);
       if (match) {
         const id = match[1];
         const address = match[2];

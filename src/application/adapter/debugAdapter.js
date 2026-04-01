@@ -4,6 +4,7 @@ const {
   DebugSession,
   InitializedEvent,
   StoppedEvent,
+  BreakpointEvent,
   TerminatedEvent,
   InvalidatedEvent,
   Thread,
@@ -63,6 +64,7 @@ class MSXDebugSession extends DebugSession {
     this.basicLineByEditorLine = null;
     this.currentStackTracingLine = 0;
     this.endBpId = null;
+    this.lastBreakpointHitAt = 0;
   }
 
   //--------------------------------------------------
@@ -229,6 +231,9 @@ class MSXDebugSession extends DebugSession {
     this.debuggingActive = true;
     await this._setAutoBreakpointsEnabled(true);
 
+    // Apply any user breakpoints that were configured before launch.
+    await this._applyUserBreakpoints();
+
     logger.debug("Debugging is running");
     this.debuggingRunning = true;
 
@@ -237,20 +242,34 @@ class MSXDebugSession extends DebugSession {
     //--------------------------------------------------
 
     this.msx.on("breakpointHit", async (info) => {
-      const id = parseInt(info.id) || 1;
-      const addr = parseInt(info.address) || 0;
+      this.lastBreakpointHitAt = Date.now();
+      const idRaw = parseInt(info.id, 10);
+      const id = Number.isNaN(idRaw) ? null : idRaw;
+      const addrRaw = parseInt(info.address, 0);
+      const addr = Number.isNaN(addrRaw) ? null : addrRaw;
 
       logger.debug(`Breakpoint id=${id} address=${addr}`);
 
-      const meta = this.emuBreakpointInfo.get(id) || null;
+      const meta = id !== null ? this.emuBreakpointInfo.get(id) || null : null;
 
       if (meta && meta.kind === "end") {
         this._handleEndProgram();
         return;
       }
 
-      const line = meta ? meta.line : null;
-      const source = meta ? meta.source : this.program;
+      let line = meta ? meta.line : null;
+      let source = meta ? meta.source : this.program;
+
+      if ((line === null || line === undefined) && addr !== null) {
+        const basicLine = this._getBasicLineAtOrBeforeAddress(addr);
+        const editorLineByBasicLine = this._getEditorLineByBasicLine(
+          this.program,
+        );
+        if (basicLine && editorLineByBasicLine[basicLine]) {
+          line = editorLineByBasicLine[basicLine];
+          source = this.program;
+        }
+      }
 
       const hasUserBreakpoint = this._hasUserBreakpoint(source, line);
 
@@ -270,6 +289,9 @@ class MSXDebugSession extends DebugSession {
         this.currentLine = line;
         this.cachedStackFrames = null;
       }
+
+      // Ensure stack/visuals update when stopped at a breakpoint.
+      this.debuggingActive = true;
 
       if (
         this.startDebuggingSP === null ||
@@ -291,6 +313,11 @@ class MSXDebugSession extends DebugSession {
 
     this.msx.on("paused", async () => {
       logger.debug("Pause event received");
+      // If a breakpoint just hit, keep the breakpoint stop reason/line.
+      const sinceHitMs = Date.now() - this.lastBreakpointHitAt;
+      if (sinceHitMs < 100) return;
+
+      this.debuggingActive = true;
 
       if (
         this.startDebuggingSP === null ||
@@ -339,7 +366,7 @@ class MSXDebugSession extends DebugSession {
 
     const existingIds = this.userBreakpointIdsBySource.get(source) || [];
     for (const id of existingIds) {
-      await this.cmd.breakpoint.remove(id);
+      if (this.cmd !== null) await this.cmd.breakpoint.remove(id);
       this.emuBreakpointInfo.delete(id);
     }
 
@@ -353,24 +380,30 @@ class MSXDebugSession extends DebugSession {
       userLines.add(editorLine);
       const basicLine = linesMap[editorLine] || null;
       const addr =
-        basicLine !== null ? this.cdb.getAddressForLine(basicLine) : null;
+        basicLine !== null && this.cdb !== null
+          ? this.cdb.getAddressForLine(basicLine)
+          : null;
 
       if (addr !== null) {
-        const id = await this.cmd.breakpoint.set(addr);
+        const id = this.cmd !== null ? await this.cmd.breakpoint.set(addr) : null;
 
-        this.userBreakpointIdsBySource.get(source).push(id);
-        this.emuBreakpointInfo.set(id, {
-          kind: "user",
-          source,
+        if (id !== null && id !== undefined) {
+          this.userBreakpointIdsBySource.get(source).push(id);
+          this.emuBreakpointInfo.set(id, {
+            kind: "user",
+            source,
+            line: editorLine,
+            basicLine,
+          });
+        }
+
+        const bpResponse = {
           line: editorLine,
-          basicLine,
-        });
-
-        breakpoints.push({
-          id,
           verified: true,
-          line: editorLine,
-        });
+        };
+        if (id !== null && id !== undefined) bpResponse.id = id;
+
+        breakpoints.push(bpResponse);
       } else {
         breakpoints.push({
           verified: false,
@@ -391,8 +424,10 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   async stackTraceRequest(response, args, request) {
-    if (!this.debuggingRunning || !this.debuggingActive)
+    if (!this.debuggingRunning) {
       super.stackTraceRequest(response, args, request);
+      return;
+    }
 
     if (this.currentLine == this.currentStackTracingLine) {
       logger.debug(`stack trace request for same line (ignored)`);
@@ -535,6 +570,31 @@ class MSXDebugSession extends DebugSession {
     return list[idx - 1].basicLine;
   }
 
+  _getBasicLineAtOrBeforeAddress(callbackAddress) {
+    const list = this._getBasicLineAddressList();
+    if (!list.length) return null;
+
+    if (callbackAddress <= list[0].address) {
+      return list[0].basicLine;
+    }
+
+    const last = list[list.length - 1];
+    if (callbackAddress >= last.address) {
+      return last.basicLine;
+    }
+
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].address === callbackAddress) {
+        return list[i].basicLine;
+      }
+      if (list[i].address > callbackAddress) {
+        return list[i - 1].basicLine;
+      }
+    }
+
+    return list[0].basicLine;
+  }
+
   async _buildStackFrames() {
     const frames = [];
     const source = new Source(path.basename(this.program), this.program);
@@ -551,7 +611,7 @@ class MSXDebugSession extends DebugSession {
 
     frames.push(new StackFrame(1, topLabel, source, currentLine, 0));
 
-    if (!this.msx || !this.cdb || !this.debuggingActive) {
+    if (!this.msx || !this.cdb) {
       this.cachedStackFrames = frames;
       return frames;
     }
@@ -791,11 +851,62 @@ class MSXDebugSession extends DebugSession {
     if (this.autoBreakpointsEnabled === enabled) return;
     this.autoBreakpointsEnabled = enabled;
 
-    if (enabled) {
-      await this.cmd.breakpoint.enableAll();
-    } else {
+    if (!this.cmd) return;
+    if (enabled) await this.cmd.breakpoint.enableAll();
+    else {
       await this.cmd.breakpoint.disableAll();
+
+      // After global enable/disable, toggle only manual breakpoints individually.
+      for (const ids of this.userBreakpointIdsBySource.values()) {
+        for (const id of ids) await this.cmd.breakpoint.enable(id);
+      }
+
+      // Keep end-program breakpoint active even when auto-line breakpoints are off
       if (this.endBpId) await this.cmd.breakpoint.enable(this.endBpId);
+    }
+  }
+
+  async _applyUserBreakpoints() {
+    if (!this.cmd || !this.cdb) return;
+
+    for (const [source, userLines] of this.userBreakpointsBySource.entries()) {
+      const linesMap = this._getBasicLineMap(source);
+
+      const existingIds = this.userBreakpointIdsBySource.get(source) || [];
+      for (const id of existingIds) {
+        await this.cmd.breakpoint.remove(id);
+        this.emuBreakpointInfo.delete(id);
+      }
+
+      this.userBreakpointIdsBySource.set(source, []);
+
+      for (const editorLine of userLines) {
+        const basicLine = linesMap[editorLine] || null;
+        const addr =
+          basicLine !== null ? this.cdb.getAddressForLine(basicLine) : null;
+        if (addr === null) continue;
+
+        const id = await this.cmd.breakpoint.set(addr);
+        if (id === null || id === undefined) continue;
+
+        this.userBreakpointIdsBySource.get(source).push(id);
+        this.emuBreakpointInfo.set(id, {
+          kind: "user",
+          source,
+          line: editorLine,
+          basicLine,
+        });
+
+        // Notify VSCode that this breakpoint is now verified.
+        this.sendEvent(
+          new BreakpointEvent("changed", {
+            id,
+            verified: true,
+            line: editorLine,
+            source: new Source(path.basename(source), source),
+          }),
+        );
+      }
     }
   }
 

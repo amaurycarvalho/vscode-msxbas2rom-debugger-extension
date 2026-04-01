@@ -32,6 +32,8 @@ If an insight registered here is not relevant any more, remove it.
 - The debugger extension is expected to integrate with openMSX and expose VSCode-standard debug views (Variables, Call Stack, stepping).
 
 ### 4. Edge Cases Frequently Missed by AI
+- Breakpoints configured before launch need to be applied after `launchRequest`, otherwise they are silently ignored.
+- Visual stop line/Call Stack can fail if `stackTraceRequest` is gated by `debuggingActive`; ensure the adapter builds frames on breakpoint stops even if the pause event fires before `breakpointHit`.
 
 ### 5. Performance Observations
 
