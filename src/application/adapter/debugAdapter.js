@@ -417,9 +417,6 @@ class MSXDebugSession extends DebugSession {
       }
     });
 
-    this.msx.on("endProgram", async (info) => {
-      await this._handleEndProgram();
-    });
 
     this.sendResponse(response);
   }

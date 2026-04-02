@@ -8,6 +8,7 @@ const EventEmitter = require("events");
 const fs = require("fs");
 const path = require("path");
 const Logger = require("../../shared/logger/logger");
+const OpenMSXXmlParser = require("./openmsxXmlParser");
 
 const logger = new Logger("openmsxControl");
 
@@ -87,13 +88,13 @@ class OpenMSXControl extends EventEmitter {
   constructor(openmsxPath, romPath) {
     super();
 
-    this.buffer = "";
     this.pendingReplies = [];
     this.readyEmitted = false;
     this.openmsxPath = openmsxPath;
     this.romPath = romPath;
     this.queue = [];
     this.processing = false;
+    this.parser = new OpenMSXXmlParser();
   }
 
   //--------------------------------------------------
@@ -169,31 +170,18 @@ class OpenMSXControl extends EventEmitter {
   //--------------------------------------------------
 
   _onData(data) {
-    this.buffer += data;
-
-    let processed = false;
-
     if (!this.readyEmitted) {
       this.readyEmitted = true;
       this.emit("output", "ready");
     }
 
-    // strip wrapper tags to simplify parsing
-    this.buffer = this.buffer
-      .replace(/<openmsx-output>/g, "")
-      .replace(/<\/openmsx-output>/g, "");
+    const parsed = this.parser.feed(data);
 
     //--------------------------------------------------
     // reply handler (command responses)
     //--------------------------------------------------
 
-    while (true) {
-      let match = this.buffer.match(/<reply[^>]*>([\s\S]*?)<\/reply>/);
-      if (!match) break;
-
-      let full = match[0];
-      const result = match[1];
-
+    for (const result of parsed.replies) {
       logger.debug(`reply: ${result}`);
 
       const resolve = this.pendingReplies.shift();
@@ -203,45 +191,15 @@ class OpenMSXControl extends EventEmitter {
       } else {
         logger.error("reply received but no pending command");
       }
-
-      //--------------------------------------------------
-      // remove current reply from buffer list
-      //--------------------------------------------------
-      this.buffer = this.buffer.replace(full, "");
-      processed = true;
     }
 
     //--------------------------------------------------
     // events handler
     //--------------------------------------------------
 
-    while (true) {
-      const regex =
-        /<update\s+type="status"\s+name="(?<eventId>\w+)"\s*>(?<eventContent>.*?)<\/update>/;
-      const match = this.buffer.match(regex);
-      if (!match) break;
-
-      const full = match[0];
-      const { eventId, eventContent } = match.groups;
-
-      logger.debug(`event: ${eventId} = ${eventContent}`);
-
-      this.emit("update", {
-        name: eventId,
-        content: eventContent,
-      });
-
-      //--------------------------------------------------
-      // remove current event from buffer list
-      //--------------------------------------------------
-      this.buffer = this.buffer.replace(full, "");
-      processed = true;
-    }
-
-    // prevent unbounded buffer growth if no complete tags are received
-    if (this.buffer.length > 65536) {
-      logger.warning("buffer overflow, trimming");
-      this.buffer = this.buffer.slice(-8192);
+    for (const update of parsed.updates) {
+      logger.debug(`event: ${update.name} = ${update.content}`);
+      this.emit("update", update);
     }
   }
 
