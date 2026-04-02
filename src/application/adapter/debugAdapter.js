@@ -109,6 +109,25 @@ class MSXDebugSession extends DebugSession {
     return super.dispatchRequest(request);
   }
 
+  customRequest(command, response, args) {
+    if (command === "msx/setLoggerConfig") {
+      const debugEnabled = args && args.enableDebugLogs === true;
+      const verboseEnabled = args && args.enableVerboseLogs === true;
+      const logPath = args && args.logPath ? args.logPath : undefined;
+
+      Logger.configure({
+        debugEnabled,
+        verboseEnabled,
+        logPath,
+      });
+
+      this.sendResponse(response);
+      return;
+    }
+
+    super.customRequest(command, response, args);
+  }
+
   async _transitionTo(state) {
     if (this.state && this.state.name === state.name) return;
     if (this.state && this.state.exit) {

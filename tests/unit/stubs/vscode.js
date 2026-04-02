@@ -39,9 +39,21 @@ const window = {
   showInformationMessage: async () => undefined,
 };
 
+const _configStore = new Map();
+
 const workspace = {
   workspaceFolders: [],
-  getConfiguration: () => ({ get: () => false }),
+  getConfiguration: () => ({
+    get: (key) => _configStore.get(key),
+    update: async (key, value) => {
+      _configStore.set(key, value);
+    },
+    inspect: (key) => ({
+      globalValue: _configStore.get(key),
+      workspaceValue: undefined,
+      workspaceFolderValue: undefined,
+    }),
+  }),
   onDidChangeConfiguration: () => new Disposable(),
   onDidOpenTextDocument: () => new Disposable(),
   onDidChangeWorkspaceFolders: () => new Disposable(),
@@ -70,6 +82,11 @@ module.exports = {
   languages,
   debug,
   commands,
+  ConfigurationTarget: {
+    Global: 1,
+    Workspace: 2,
+    WorkspaceFolder: 3,
+  },
   RelativePattern,
   SemanticTokensLegend,
   SemanticTokensBuilder,

@@ -50,7 +50,8 @@
         "msxDebugger.enableVerboseLogs": {
           "type": "boolean",
           "default": false,
-          "description": "Enable verbose logging for MSX debugger (detailed protocol and memory reads)."
+          "description": "Enable verbose logging for MSX debugger (detailed protocol and memory reads).",
+          "when": "msxDebugger.enableDebugLogs == true"
         },
         "msxDebugger.logPath": {
           "type": "string",

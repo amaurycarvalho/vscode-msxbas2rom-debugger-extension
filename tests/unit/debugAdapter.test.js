@@ -8,6 +8,7 @@ process.env.MSX_UNIT_TEST = "1";
 const {
   MSXDebugSession,
 } = require("../../src/application/adapter/debugAdapter");
+const Logger = require("../../src/shared/logger/logger");
 
 test("_getBasicLineMap extracts BASIC line numbers", () => {
   const session = new MSXDebugSession();
@@ -531,4 +532,24 @@ test("disconnectRequest stops emulator and terminates session", async () => {
   assert.equal(session.state.name, "terminated");
   const eventNames = events.map((e) => e.event);
   assert.equal(eventNames.includes("terminated"), true);
+});
+
+test("customRequest updates logger configuration in adapter", () => {
+  const session = new MSXDebugSession();
+  const response = {};
+  let responded = false;
+
+  Logger.configure({ debugEnabled: false });
+  session.sendResponse = () => {
+    responded = true;
+  };
+
+  session.customRequest("msx/setLoggerConfig", response, {
+    enableDebugLogs: true,
+    enableVerboseLogs: true,
+    logPath: "/tmp",
+  });
+
+  assert.equal(Logger.isDebugEnabled(), true);
+  assert.equal(responded, true);
 });

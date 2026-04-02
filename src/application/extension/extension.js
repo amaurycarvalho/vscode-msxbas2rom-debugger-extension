@@ -39,11 +39,43 @@ function configureLogger() {
   });
 }
 
+function getLoggerConfig() {
+  const config = vscode.workspace.getConfiguration("msxDebugger");
+  return {
+    enableDebugLogs: config.get("enableDebugLogs") === true,
+    enableVerboseLogs: config.get("enableVerboseLogs") === true,
+    logPath: config.get("logPath"),
+  };
+}
+
+async function enforceVerboseDependsOnDebug() {
+  const config = vscode.workspace.getConfiguration("msxDebugger");
+  const enableDebugLogs = config.get("enableDebugLogs") === true;
+  const enableVerboseLogs = config.get("enableVerboseLogs") === true;
+
+  if (enableDebugLogs || !enableVerboseLogs) return;
+
+  const inspected = config.inspect("enableVerboseLogs");
+  const vscodeConfig = vscode.ConfigurationTarget;
+  let target = vscodeConfig.Global;
+
+  if (inspected && inspected.workspaceFolderValue !== undefined) {
+    target = vscodeConfig.WorkspaceFolder;
+  } else if (inspected && inspected.workspaceValue !== undefined) {
+    target = vscodeConfig.Workspace;
+  }
+
+  await config.update("enableVerboseLogs", false, target);
+}
+
 /**
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
   configureLogger();
+  enforceVerboseDependsOnDebug().catch((err) => {
+    logger.warning(`Failed to enforce verbose logging setting: ${err}`);
+  });
 
   if (!crashSidecar) {
     crashSidecar = new CrashSidecar({
@@ -67,10 +99,26 @@ function activate(context) {
     crashSidecar.install();
   }
 
-  const configListener = vscode.workspace.onDidChangeConfiguration((event) => {
+  const configListener = vscode.workspace.onDidChangeConfiguration(async (event) => {
     if (event.affectsConfiguration("msxDebugger")) {
       configureLogger();
       logger.info("Logger configuration updated");
+
+      await enforceVerboseDependsOnDebug();
+
+      const session = vscode.debug.activeDebugSession;
+      if (session && session.type === "msx") {
+        const { enableDebugLogs, enableVerboseLogs, logPath } = getLoggerConfig();
+        session
+          .customRequest("msx/setLoggerConfig", {
+            enableDebugLogs,
+            enableVerboseLogs,
+            logPath,
+          })
+          .catch((err) => {
+            logger.warning(`Failed to sync logger config: ${err}`);
+          });
+      }
     }
   });
   context.subscriptions.push(configListener);
