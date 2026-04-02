@@ -10,6 +10,7 @@ const {
   legend,
 } = require("../../shared/vscode/semanticTokens");
 const Logger = require("../../shared/logger/logger");
+const CrashSidecar = require("../../shared/error/crashSidecar");
 
 //--------------------------------------------------
 // Logging
@@ -18,6 +19,7 @@ const Logger = require("../../shared/logger/logger");
 const outputChannel = vscode.window.createOutputChannel("MSX Debugger");
 const promptedWorkspaces = new Set();
 const logger = new Logger("extension");
+let crashSidecar = null;
 
 function resetPromptedWorkspaces() {
   promptedWorkspaces.clear();
@@ -43,6 +45,21 @@ function configureLogger() {
 function activate(context) {
   configureLogger();
 
+  if (!crashSidecar) {
+    crashSidecar = new CrashSidecar({
+      scope: "extensionHost",
+      getLogPath: () => Logger.getLogPath(),
+      output: (msg) => {
+        try {
+          outputChannel.appendLine(msg);
+        } catch (e) {
+          // ignore output failures
+        }
+      },
+    });
+    crashSidecar.install();
+  }
+
   const configListener = vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration("msxDebugger")) {
       configureLogger();
@@ -50,6 +67,45 @@ function activate(context) {
     }
   });
   context.subscriptions.push(configListener);
+
+  //--------------------------------------------------
+  // Log helpers
+  //--------------------------------------------------
+
+  function openLogFile(filePath, label) {
+    try {
+      if (!fs.existsSync(filePath)) {
+        vscode.window.showErrorMessage(
+          `${label} not found. Enable logs and retry.`,
+        );
+        return;
+      }
+      const uri = vscode.Uri.file(filePath);
+      vscode.commands.executeCommand("vscode.open", uri);
+    } catch (err) {
+      vscode.window.showErrorMessage(
+        `Failed to open ${label}: ${err.message}`,
+      );
+    }
+  }
+
+  const openDebugLogCmd = vscode.commands.registerCommand(
+    "msx.openDebugLog",
+    () => {
+      const filePath = Logger.resolveLogFile();
+      openLogFile(filePath, "MSX debug log");
+    },
+  );
+  context.subscriptions.push(openDebugLogCmd);
+
+  const openCrashLogCmd = vscode.commands.registerCommand(
+    "msx.openCrashLog",
+    () => {
+      const filePath = CrashSidecar.resolveCrashFile(Logger.getLogPath());
+      openLogFile(filePath, "MSX crash log");
+    },
+  );
+  context.subscriptions.push(openCrashLogCmd);
 
   //--------------------------------------------------
   // Semantic tokens provider registration

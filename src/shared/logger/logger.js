@@ -29,6 +29,10 @@ class Logger {
     }
   }
 
+  static getLogPath() {
+    return Logger._logPath;
+  }
+
   static _expandPath(inputPath) {
     if (!inputPath) return inputPath;
 
@@ -56,6 +60,14 @@ class Logger {
         : "/tmp");
 
     return path.join(base, "msx-debug.log");
+  }
+
+  static expandPath(inputPath) {
+    return Logger._expandPath(inputPath);
+  }
+
+  static resolveLogFile() {
+    return Logger._resolveLogFile();
   }
 
   static _writeLine(line) {

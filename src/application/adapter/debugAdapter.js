@@ -21,6 +21,7 @@ const DebugService = require("../services/debugService");
 const OpenMSXControl = require("../../infrastructure/openmsx/openmsxControl");
 const VariableDecoder = require("../../shared/decoder/variableDecoder");
 const Logger = require("../../shared/logger/logger");
+const CrashSidecar = require("../../shared/error/crashSidecar");
 
 const fs = require("fs");
 const path = require("path");
@@ -65,6 +66,33 @@ class MSXDebugSession extends DebugSession {
     this.currentStackTracingLine = 0;
     this.endBpId = null;
     this.lastBreakpointHitAt = 0;
+
+    this.lastRequest = null;
+
+    this.crashSidecar = new CrashSidecar({
+      scope: "debugAdapter",
+      getLogPath: () => Logger.getLogPath(),
+      getLastAction: () => this.lastRequest,
+      output: (msg) => {
+        try {
+          this.sendEvent(new OutputEvent(`${msg}\n`, "stderr"));
+        } catch (e) {
+          // ignore output failures
+        }
+      },
+    });
+    this.crashSidecar.install();
+  }
+
+  dispatchRequest(request) {
+    if (request) {
+      this.lastRequest = {
+        command: request.command,
+        seq: request.seq,
+        type: request.type,
+      };
+    }
+    return super.dispatchRequest(request);
   }
 
   //--------------------------------------------------

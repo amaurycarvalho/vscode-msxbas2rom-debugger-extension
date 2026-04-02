@@ -22,6 +22,8 @@
   "activationEvents": [
     "onDebug",
     "onCommand:msx.initializeProject",
+    "onCommand:msx.openDebugLog",
+    "onCommand:msx.openCrashLog",
     "onLanguage:msx-basic"
   ],
   "main": "./src/application/extension/extension.js",
@@ -100,6 +102,14 @@
       {
         "command": "msx.initializeProject",
         "title": "MSXBAS2ROM: Initialize Project"
+      },
+      {
+        "command": "msx.openDebugLog",
+        "title": "MSXBAS2ROM: Open Debug Log"
+      },
+      {
+        "command": "msx.openCrashLog",
+        "title": "MSXBAS2ROM: Open Crash Log"
       }
     ],
     "breakpoints": [
