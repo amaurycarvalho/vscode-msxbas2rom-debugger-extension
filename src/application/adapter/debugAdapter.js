@@ -33,6 +33,7 @@ const {
   PausedState,
   RunningContinueState,
   RunningStepOutState,
+  RunningStepOverState,
   RunningStepState,
   TerminatedState,
 } = require("./states");
@@ -367,6 +368,10 @@ class MSXDebugSession extends DebugSession {
 
     this.msx.on("paused", async () => {
       logger.debug("Pause event received");
+      if (this.state && this.state.name === "running-stepover") {
+        logger.debug("Pause ignored during Step Over; waiting for breakpoint");
+        return;
+      }
       // If a breakpoint just hit, keep the breakpoint stop reason/line.
       const sinceHitMs = Date.now() - this.lastBreakpointHitAt;
       if (sinceHitMs < 100) return;
@@ -836,21 +841,49 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   async nextRequest(response, args) {
-    await this._transitionTo(new RunningStepState());
+    let sp = null;
+    if (this.cmd) {
+      try {
+        sp = await this.cmd.register.get("SP");
+      } catch (err) {
+        logger.error(`Failed to read SP for Step Over: ${err}`);
+      }
+    }
+
+    if (sp === null || sp === undefined) {
+      await this._transitionTo(new RunningStepState());
+      this.cmd.control.resume();
+      this.sendResponse(response);
+      return;
+    }
+
+    await this._transitionTo(new RunningStepOverState({ startSp: sp }));
     this.cmd.control.resume();
 
     this.sendResponse(response);
   }
 
   async stepInRequest(response, args) {
-    await this.nextRequest(response, args);
+    await this._transitionTo(new RunningStepState());
+    this.cmd.control.resume();
+
+    this.sendResponse(response);
   }
 
   async stepOutRequest(response, args) {
-    const frames = await this._buildStackFrames();
-    if (!frames || frames.length <= 1) {
+    const started = await this._startStepOutTransition();
+    if (!started) {
       await this.continueRequest(response, args);
       return;
+    }
+
+    this.sendResponse(response);
+  }
+
+  async _startStepOutTransition() {
+    const frames = await this._buildStackFrames();
+    if (!frames || frames.length <= 1) {
+      return false;
     }
 
     if (this.cmd) {
@@ -865,8 +898,7 @@ class MSXDebugSession extends DebugSession {
       sp = await this.cmd.register.get("SP");
     } catch (err) {
       logger.error(`Failed to read SP for Step Out: ${err}`);
-      this.sendResponse(response);
-      return;
+      return false;
     }
 
     const returnAddr = await this.cmd.memory.peek16(sp);
@@ -882,10 +914,11 @@ class MSXDebugSession extends DebugSession {
       this._trackBreakpoint(tempId, returnAddr, "temp-stepout");
     }
 
-    await this._transitionTo(new RunningStepOutState({ tempBreakpointId: tempId }));
+    await this._transitionTo(
+      new RunningStepOutState({ tempBreakpointId: tempId }),
+    );
     this.cmd.control.resume();
-
-    this.sendResponse(response);
+    return true;
   }
 
   //--------------------------------------------------
@@ -980,7 +1013,7 @@ class MSXDebugSession extends DebugSession {
     if (this.autoBreakpointsEnabled === enabled) return;
     this.autoBreakpointsEnabled = enabled;
 
-    if (!this.cmd) return;
+    if (!this.cmd || !this.cmd.breakpoint) return;
     if (enabled) {
       await this.cmd.breakpoint.enableAll();
       for (const id of this.breakpointStateById.keys()) {

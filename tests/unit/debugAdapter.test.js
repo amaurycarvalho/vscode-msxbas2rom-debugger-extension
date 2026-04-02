@@ -296,3 +296,61 @@ test("stepOutRequest creates temp breakpoint and removes it after hit", async ()
   assert.equal(calls.enableAll, 1);
   assert.equal(session.breakpointStateById.has(77), false);
 });
+
+test("stepOver triggers stepOut when stack deepens on auto breakpoint", async () => {
+  const session = new MSXDebugSession();
+  const responses = [];
+  let spCalls = 0;
+  let stepOutCalled = false;
+
+  session.sendResponse = (response) => responses.push(response);
+  session._startStepOutTransition = async () => {
+    stepOutCalled = true;
+    return true;
+  };
+
+  session.cmd = {
+    register: {
+      get: async () => {
+        spCalls += 1;
+        return spCalls === 1 ? 0x3000 : 0x2ff0;
+      },
+    },
+    control: { resume: () => {} },
+  };
+
+  await session.nextRequest({ body: {} }, {});
+
+  assert.equal(session.state.name, "running-stepover");
+
+  await session.state.onBreakpointHit(session, { meta: { kind: "auto-line" } });
+
+  assert.equal(stepOutCalled, true);
+});
+
+test("stepOver pauses when stack does not deepen or hit user breakpoint", async () => {
+  const session = new MSXDebugSession();
+  const responses = [];
+  let spCalls = 0;
+
+  session.sendResponse = (response) => responses.push(response);
+  session._startStepOutTransition = async () => {
+    throw new Error("step out should not be called");
+  };
+
+  session.cmd = {
+    register: {
+      get: async () => {
+        spCalls += 1;
+        return spCalls === 1 ? 0x3000 : 0x3000;
+      },
+    },
+    control: { resume: () => {} },
+  };
+
+  await session.nextRequest({ body: {} }, {});
+
+  await session.state.onBreakpointHit(session, { meta: { kind: "user" } });
+
+  assert.equal(session.state.name, "paused");
+});

@@ -26,6 +26,7 @@ If an insight registered here is not relevant any more, remove it.
 
 - User stories are written in English and follow the "As a / I want / so that" format.
 - BDD scenarios are expected to use explicit Given/When/Then statements, even when still early in scope.
+- Domain commands are re-exported via `src/domain/commands/index.js` grouped by domain (`breakpoint`, `control`, `memory`, `register`) for cleaner imports.
 
 ### 3. Repeated Architectural Decisions
 

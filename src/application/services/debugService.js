@@ -1,18 +1,23 @@
-const SetBreakpointCommand = require("../../domain/commands/breakpoint/set");
-const RemoveBreakpointCommand = require("../../domain/commands/breakpoint/remove");
-const GetCurrentBreakpointCommand = require("../../domain/commands/breakpoint/getCurrent");
-const EnableAllBreakpointsCommand = require("../../domain/commands/breakpoint/enableAll");
-const DisableAllBreakpointsCommand = require("../../domain/commands/breakpoint/disableAll");
-const EnableBreakpointCommand = require("../../domain/commands/breakpoint/enable");
-const DisableBreakpointCommand = require("../../domain/commands/breakpoint/disable");
-const CreateOnceBreakpointCommand = require("../../domain/commands/breakpoint/createOnce");
-const InitializeControlCommand = require("../../domain/commands/control/initialize");
-const PauseControlCommand = require("../../domain/commands/control/pause");
-const ResumeControlCommand = require("../../domain/commands/control/resume");
-const StepControlCommand = require("../../domain/commands/control/step");
-const PeekMemoryCommand = require("../../domain/commands/memory/peek");
-const Peek16MemoryCommand = require("../../domain/commands/memory/peek16");
-const GetRegisterCommand = require("../../domain/commands/register/get");
+const {
+  breakpoint: {
+    SetBreakpointCommand,
+    RemoveBreakpointCommand,
+    GetCurrentBreakpointCommand,
+    EnableAllBreakpointsCommand,
+    DisableAllBreakpointsCommand,
+    EnableBreakpointCommand,
+    DisableBreakpointCommand,
+    CreateOnceBreakpointCommand,
+  },
+  control: {
+    InitializeControlCommand,
+    PauseControlCommand,
+    ResumeControlCommand,
+    StepControlCommand,
+  },
+  memory: { PeekMemoryCommand, Peek16MemoryCommand },
+  register: { GetRegisterCommand },
+} = require("../../domain/commands");
 
 class ControlDebugService {
   constructor(msx) {
