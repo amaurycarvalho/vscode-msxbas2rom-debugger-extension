@@ -14,7 +14,7 @@
 - [x] [US-003.5] Implement Step In (release 0.3.1);
 - [x] [US-003.6] Implement Step Out (release 0.3.2);
 - [x] [US-003.7] Implement Step Over (release 0.3.3);
-- [ ] Refactoring to remove all domain logic from openmsxControl, so that it acts only as an XML transport and parser, leaving TCL commands isolated through the Command pattern, debugService as a facade, and debugEvent to orchestrate events (release 0.3.4);
+- [x] Refactoring to remove all domain logic from openmsxControl, so that it acts only as an XML transport and parser, leaving TCL commands isolated through the Command pattern, debugService as a facade, and debugEvent to orchestrate events (release 0.3.4);
 - [ ] [US-004] Implement megaROM support (release 0.4.0);
 - [ ] Create unit tests to achieve 95% of code coverage and comply with the user stories test scenarios;
 - [ ] Migrate code to TS (release 0.4.1).
