@@ -49,6 +49,13 @@ function activate(context) {
     crashSidecar = new CrashSidecar({
       scope: "extensionHost",
       getLogPath: () => Logger.getLogPath(),
+      isEnabled: () => Logger.isDebugEnabled(),
+      isOwnError: (err, kind) => {
+        const stack = err && err.stack ? String(err.stack) : "";
+        const message = err && err.message ? String(err.message) : "";
+        const haystack = `${stack}\n${message}`;
+        return haystack.includes(context.extensionPath);
+      },
       output: (msg) => {
         try {
           outputChannel.appendLine(msg);

@@ -5,12 +5,21 @@ const path = require("path");
 const os = require("os");
 
 class CrashSidecar {
-  constructor({ scope, getLogPath, output, getLastAction } = {}) {
+  constructor({
+    scope,
+    getLogPath,
+    output,
+    getLastAction,
+    isEnabled,
+    isOwnError,
+  } = {}) {
     this.scope = scope || "unknown";
     this.getLogPath = getLogPath || (() => null);
     this.output = typeof output === "function" ? output : null;
     this.getLastAction =
       typeof getLastAction === "function" ? getLastAction : null;
+    this.isEnabled = typeof isEnabled === "function" ? isEnabled : () => true;
+    this.isOwnError = typeof isOwnError === "function" ? isOwnError : null;
     this._handling = false;
   }
 
@@ -40,6 +49,8 @@ class CrashSidecar {
     this._handling = true;
 
     try {
+      if (!this.isEnabled()) return;
+      if (this.isOwnError && !this.isOwnError(err, kind)) return;
       const payload = this._buildPayload(kind, err);
       const filePath = this._writeCrash(payload);
       if (this.output) {

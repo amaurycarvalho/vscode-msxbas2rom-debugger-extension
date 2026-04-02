@@ -70,6 +70,10 @@ class Logger {
     return Logger._resolveLogFile();
   }
 
+  static isDebugEnabled() {
+    return Logger._debugEnabled === true;
+  }
+
   static _writeLine(line) {
     try {
       const filePath = Logger._resolveLogFile();

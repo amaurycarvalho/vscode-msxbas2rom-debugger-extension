@@ -84,6 +84,7 @@ class MSXDebugSession extends DebugSession {
     this.crashSidecar = new CrashSidecar({
       scope: "debugAdapter",
       getLogPath: () => Logger.getLogPath(),
+      isEnabled: () => Logger.isDebugEnabled(),
       getLastAction: () => this.lastRequest,
       output: (msg) => {
         try {
