@@ -10,9 +10,10 @@
 - [x] [US-002] Implement string array support;
 - [x] [US-002] Implement single/double array support;
 - [x] [US-003] Implement stack trace;
-- [x] [US-003.1] Implement code refactoring (release 0.3.1);
-- [ ] [US-003.2] Implement Step Out (release 0.3.2);
-- [ ] [US-003.3] Implement Step Over (release 0.3.3);
+- [x] [US-003.1], [US-003.2], [US-003.3], and [US-003.4] Implement basic debugging;
+- [x] [US-003.5] Implement Step In (release 0.3.1);
+- [x] [US-003.6] Implement Step Out (release 0.3.2);
+- [ ] [US-003.7] Implement Step Over (release 0.3.3);
 - [ ] [US-004] Implement megaROM support (release 0.4.0);
 - [ ] Create unit tests to achieve 95% of code coverage and comply with the user stories test scenarios;
 - [ ] Migrate code to TS (release 0.4.1).
