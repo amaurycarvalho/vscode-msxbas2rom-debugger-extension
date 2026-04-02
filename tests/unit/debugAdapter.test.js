@@ -84,9 +84,11 @@ test("variablesRequest expands int16 array variables", async () => {
     }),
   };
 
-  session.msx = {
-    peekS16: async (address) =>
-      ({ 0x1000: 1, 0x1002: 2, 0x1004: 3 })[address] ?? 0,
+  session.cmd = {
+    memory: {
+      peekS16: async (address) =>
+        ({ 0x1000: 1, 0x1002: 2, 0x1004: 3 })[address] ?? 0,
+    },
   };
 
   await session.variablesRequest({ body: {} }, { variablesReference: 0 });
@@ -154,10 +156,12 @@ test("variablesRequest expands pstring and float24 arrays", async () => {
   mem8.set(0x4003, 130);
   mem16.set(0x4004, 18702);
 
-  session.msx = {
-    peek: async (address) => mem8.get(address) ?? 0,
-    peek16: async (address) => mem16.get(address) ?? 0,
-    readBlock: async (address) => blocks.get(address) ?? Buffer.alloc(0),
+  session.cmd = {
+    memory: {
+      peek: async (address) => mem8.get(address) ?? 0,
+      peek16: async (address) => mem16.get(address) ?? 0,
+      readBlock: async (address) => blocks.get(address) ?? Buffer.alloc(0),
+    },
   };
 
   await session.variablesRequest({ body: {} }, { variablesReference: 0 });

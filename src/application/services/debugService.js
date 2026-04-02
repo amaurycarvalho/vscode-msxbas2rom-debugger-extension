@@ -15,7 +15,12 @@ const {
     ResumeControlCommand,
     StepControlCommand,
   },
-  memory: { PeekMemoryCommand, Peek16MemoryCommand },
+  memory: {
+    PeekMemoryCommand,
+    Peek16MemoryCommand,
+    PeekS16MemoryCommand,
+    ReadBlockMemoryCommand,
+  },
   register: { GetRegisterCommand },
 } = require("../../domain/commands");
 
@@ -27,17 +32,21 @@ class ControlDebugService {
     this.pauseCommand = new PauseControlCommand();
     this.stepCommand = new StepControlCommand();
   }
+  async _execute(command) {
+    const raw = await this.msx.send(command.toTCL());
+    return command.parse(raw);
+  }
   initialize() {
-    return this.msx.execute(this.initializeCommand);
+    return this._execute(this.initializeCommand);
   }
   async resume() {
-    return await this.msx.execute(this.resumeCommand);
+    return await this._execute(this.resumeCommand);
   }
   async pause() {
-    return await this.msx.execute(this.pauseCommand);
+    return await this._execute(this.pauseCommand);
   }
   async step() {
-    return await this.msx.execute(this.stepCommand);
+    return await this._execute(this.stepCommand);
   }
 }
 
@@ -48,29 +57,33 @@ class BreakpointDebugService {
     this.enableAllBreakpointsCommand = new EnableAllBreakpointsCommand();
     this.disableAllBreakpointsCommand = new DisableAllBreakpointsCommand();
   }
+  async _execute(command) {
+    const raw = await this.msx.send(command.toTCL());
+    return command.parse(raw);
+  }
   async set(a) {
-    return await this.msx.execute(new SetBreakpointCommand(a));
+    return await this._execute(new SetBreakpointCommand(a));
   }
   async remove(id) {
-    return await this.msx.execute(new RemoveBreakpointCommand(id));
+    return await this._execute(new RemoveBreakpointCommand(id));
   }
   async createOnce(a) {
-    return await this.msx.execute(new CreateOnceBreakpointCommand(a));
+    return await this._execute(new CreateOnceBreakpointCommand(a));
   }
   async getCurrent() {
-    return await this.msx.execute(this.getCurrentBreakpointCommand);
+    return await this._execute(this.getCurrentBreakpointCommand);
   }
   async enable(id) {
-    return await this.msx.execute(new EnableBreakpointCommand(id));
+    return await this._execute(new EnableBreakpointCommand(id));
   }
   async disable(id) {
-    return await this.msx.execute(new DisableBreakpointCommand(id));
+    return await this._execute(new DisableBreakpointCommand(id));
   }
   async enableAll() {
-    return await this.msx.execute(this.enableAllBreakpointsCommand);
+    return await this._execute(this.enableAllBreakpointsCommand);
   }
   async disableAll() {
-    return await this.msx.execute(this.disableAllBreakpointsCommand);
+    return await this._execute(this.disableAllBreakpointsCommand);
   }
 }
 
@@ -78,11 +91,21 @@ class MemoryDebugService {
   constructor(msx) {
     this.msx = msx;
   }
+  async _execute(command) {
+    const raw = await this.msx.send(command.toTCL());
+    return command.parse(raw);
+  }
   async peek(a) {
-    return await this.msx.execute(new PeekMemoryCommand(a));
+    return await this._execute(new PeekMemoryCommand(a));
   }
   async peek16(a) {
-    return await this.msx.execute(new Peek16MemoryCommand(a));
+    return await this._execute(new Peek16MemoryCommand(a));
+  }
+  async peekS16(a) {
+    return await this._execute(new PeekS16MemoryCommand(a));
+  }
+  async readBlock(address, size) {
+    return await this._execute(new ReadBlockMemoryCommand(address, size));
   }
 }
 
@@ -90,8 +113,12 @@ class RegisterDebugService {
   constructor(msx) {
     this.msx = msx;
   }
+  async _execute(command) {
+    const raw = await this.msx.send(command.toTCL());
+    return command.parse(raw);
+  }
   async get(n) {
-    return await this.msx.execute(new GetRegisterCommand(n));
+    return await this._execute(new GetRegisterCommand(n));
   }
 }
 

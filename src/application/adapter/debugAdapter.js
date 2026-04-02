@@ -22,6 +22,7 @@ const OpenMSXControl = require("../../infrastructure/openmsx/openmsxControl");
 const VariableDecoder = require("../../shared/decoder/variableDecoder");
 const Logger = require("../../shared/logger/logger");
 const CrashSidecar = require("../../shared/error/crashSidecar");
+const DebugEvent = require("../../domain/events/debugEvent");
 
 const fs = require("fs");
 const path = require("path");
@@ -52,6 +53,7 @@ class MSXDebugSession extends DebugSession {
     this.msx = null;
     this.cdb = null;
     this.cmd = null;
+    this.debugEvent = null;
 
     this.debuggingActive = false;
     this.autoBreakpointsEnabled = false;
@@ -250,6 +252,7 @@ class MSXDebugSession extends DebugSession {
     }
 
     this.cmd.control.initialize();
+    this.debugEvent = new DebugEvent(this.msx, this.cmd);
 
     //--------------------------------------------------
     // auto breakpoints (all LIN_* and END_STMT)
@@ -315,12 +318,10 @@ class MSXDebugSession extends DebugSession {
     // openMSX events
     //--------------------------------------------------
 
-    this.msx.on("breakpointHit", async (info) => {
+    this.debugEvent.on("breakpointHit", async (info) => {
       this.lastBreakpointHitAt = Date.now();
-      const idRaw = parseInt(info.id, 10);
-      const id = Number.isNaN(idRaw) ? null : idRaw;
-      const addrRaw = parseInt(info.address, 0);
-      const addr = Number.isNaN(addrRaw) ? null : addrRaw;
+      const id = info && info.id !== undefined ? info.id : null;
+      const addr = info && info.address !== undefined ? info.address : null;
 
       logger.debug(`Breakpoint id=${id} address=${addr}`);
 
@@ -385,7 +386,7 @@ class MSXDebugSession extends DebugSession {
       }
     });
 
-    this.msx.on("paused", async () => {
+    this.debugEvent.on("paused", async () => {
       logger.debug("Pause event received");
       if (this.state && this.state.name === "running-stepover") {
         logger.debug("Pause ignored during Step Over; waiting for breakpoint");
@@ -729,7 +730,7 @@ class MSXDebugSession extends DebugSession {
 
       while (sp < this.startDebuggingSP && depth < maxDepth) {
         try {
-          const callbackAddr = await this.msx.peek16(sp);
+          const callbackAddr = await this.cmd.memory.peek16(sp);
           callbackStackList.push(callbackAddr);
         } catch (err) {
           logger.error(`Failed to peek SP: ${err}`);
@@ -809,7 +810,7 @@ class MSXDebugSession extends DebugSession {
           continue;
         }
 
-        const value = await VariableDecoder.decode(v, this.msx);
+        const value = await VariableDecoder.decode(v, this.cmd.memory);
 
         vars.push({
           name: name,
@@ -1206,7 +1207,7 @@ class MSXDebugSession extends DebugSession {
       symbol: "arrayElement",
     };
 
-    return await VariableDecoder.decode(variable, this.msx);
+    return await VariableDecoder.decode(variable, this.cmd.memory);
   }
 }
 

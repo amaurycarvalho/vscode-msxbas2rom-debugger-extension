@@ -205,22 +205,6 @@ class OpenMSXControl extends EventEmitter {
       }
 
       //--------------------------------------------------
-      // current breakpoint reply
-      //--------------------------------------------------
-      match = result.match(/bp#(\d+)\s+\{\s*-address\s+([0-9a-fA-Fx]+)/);
-      if (match) {
-        const id = match[1];
-        const address = match[2];
-
-        logger.debug(`Breakpoint bp#${id} at address ${address}`);
-
-        this.emit("breakpointHit", {
-          id,
-          address,
-        });
-      }
-
-      //--------------------------------------------------
       // remove current reply from buffer list
       //--------------------------------------------------
       this.buffer = this.buffer.replace(full, "");
@@ -242,16 +226,10 @@ class OpenMSXControl extends EventEmitter {
 
       logger.debug(`event: ${eventId} = ${eventContent}`);
 
-      //--------------------------------------------------
-      // cpu suspended event
-      //--------------------------------------------------
-
-      if (eventId.includes("cpu")) {
-        if (eventContent.includes("suspended")) {
-          this.emit("paused");
-          this.getCurrentBreakpoint();
-        }
-      }
+      this.emit("update", {
+        name: eventId,
+        content: eventContent,
+      });
 
       //--------------------------------------------------
       // remove current event from buffer list
@@ -265,16 +243,6 @@ class OpenMSXControl extends EventEmitter {
       logger.warning("buffer overflow, trimming");
       this.buffer = this.buffer.slice(-8192);
     }
-  }
-
-  //--------------------------------------------------
-  // Send command
-  //--------------------------------------------------
-
-  async execute(command) {
-    logger.debug(command.log());
-    const raw = await this.send(command.toTCL());
-    return command.parse(raw);
   }
 
   //--------------------------------------------------
@@ -324,123 +292,6 @@ class OpenMSXControl extends EventEmitter {
       const item = this.queue.shift();
       item.reject(new Error("Queue cleared"));
     }
-  }
-
-  //--------------------------------------------------
-  // Breakpoints
-  //--------------------------------------------------
-
-  getCurrentBreakpoint() {
-    logger.debug(`Requesting current address and breakpoint number`);
-    this.send(
-      'set bps [debug breakpoint list] ; set i [lsearch -regexp $bps "-address [reg PC]"] ; list [lindex $bps [expr {$i - 1}]] [lindex $bps $i]',
-    );
-  }
-
-  //--------------------------------------------------
-  // Memory access
-  //--------------------------------------------------
-
-  async readMemory(address, size) {
-    return await this.readBlock(address, size);
-  }
-
-  //--------------------------------------------------
-  // Parse hex memory output
-  //--------------------------------------------------
-
-  _parseHex(text) {
-    if (!text) return Buffer.alloc(0);
-
-    const trimmed = text.trim();
-    if (trimmed.length === 0) return Buffer.alloc(0);
-
-    if (/[^0-9a-fA-F\s?]/.test(trimmed)) {
-      return Buffer.from(trimmed, "latin1");
-    }
-
-    const hex = trimmed.split(/\s+/);
-
-    const bytes = hex.map((x) => {
-      if (x === "??") return 0;
-      const value = parseInt(x, 16);
-      return Number.isNaN(value) ? 0 : value;
-    });
-
-    return Buffer.from(bytes);
-  }
-
-  _parseIntReply(text) {
-    if (!text) return null;
-    const match = text.match(/-?\d+/);
-    return match ? parseInt(match[0], 10) : null;
-  }
-
-  _formatAddress(address) {
-    return `0x${address.toString(16)}`;
-  }
-
-  async _sendAndParseInt(command) {
-    const reply = await this.send(command);
-    const value = this._parseIntReply(reply);
-    return value === null ? 0 : value;
-  }
-
-  //--------------------------------------------------
-  // Convenience readers
-  //--------------------------------------------------
-
-  async readUInt16(address) {
-    return await this.peek16(address);
-  }
-
-  async readFloat24(address) {
-    const b0 = await this.peek(address);
-    const w1 = await this.peek16(address + 1);
-
-    if (!b0) return 0;
-
-    const sign = w1 & 0x8000 ? -1 : 1;
-    const mantissa = (w1 & 0x7fff) | 0x8000;
-    const exponent = b0 - 0x80;
-
-    return sign * (mantissa / 65536) * Math.pow(2, exponent);
-  }
-
-  async readPascalString(address) {
-    const len = await this.peek(address);
-    if (!len) return "";
-
-    const strBuf = await this.readBlock(address + 1, len);
-
-    return strBuf.toString("ascii");
-  }
-
-  //--------------------------------------------------
-  // openMSX memory helpers
-  //--------------------------------------------------
-
-  async peek(address) {
-    return await this._sendAndParseInt(`peek ${this._formatAddress(address)}`);
-  }
-
-  async peek16(address) {
-    return await this._sendAndParseInt(
-      `peek16 ${this._formatAddress(address)}`,
-    );
-  }
-
-  async peekS16(address) {
-    return await this._sendAndParseInt(
-      `peek_s16 ${this._formatAddress(address)}`,
-    );
-  }
-
-  async readBlock(address, size) {
-    logger.debug(`readBlock addr=${address} size=${size}`);
-    const cmd = `debug read_block {Main RAM} ${this._formatAddress(address)} ${size}`;
-    const result = await this.send(cmd);
-    return Buffer.from(result, "latin1");
   }
 
   //--------------------------------------------------

@@ -19,6 +19,8 @@ const control = {
 const memory = {
   PeekMemoryCommand: require("./memory/peek"),
   Peek16MemoryCommand: require("./memory/peek16"),
+  PeekS16MemoryCommand: require("./memory/peekS16"),
+  ReadBlockMemoryCommand: require("./memory/readBlock"),
 };
 
 const register = {
