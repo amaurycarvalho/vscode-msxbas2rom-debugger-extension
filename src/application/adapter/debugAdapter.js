@@ -28,128 +28,14 @@ const path = require("path");
 
 const logger = new Logger("debugAdapter");
 
-//--------------------------------------------------
-// Debug session states
-//--------------------------------------------------
-
-class DebugSessionState {
-  constructor(name, flags = {}) {
-    this.name = name;
-    this.flags = flags;
-  }
-
-  async enter(session) {
-    await this._applyFlags(session);
-  }
-
-  async exit(session) {}
-
-  async _applyFlags(session) {
-    if ("debuggingRunning" in this.flags) {
-      session.debuggingRunning = this.flags.debuggingRunning;
-    }
-    if ("debuggingActive" in this.flags) {
-      session.debuggingActive = this.flags.debuggingActive;
-    }
-    if ("autoBreakpointsEnabled" in this.flags) {
-      await session._setAutoBreakpointsEnabled(this.flags.autoBreakpointsEnabled);
-    }
-  }
-
-  async onBreakpointHit(session, info) {
-    await session._transitionTo(new PausedState());
-  }
-
-  async onPaused(session) {
-    await session._transitionTo(new PausedState());
-  }
-
-  async onEndProgram(session) {
-    await session._transitionTo(new TerminatedState());
-  }
-}
-
-class IdleState extends DebugSessionState {
-  constructor() {
-    super("idle", {
-      debuggingRunning: false,
-      debuggingActive: false,
-      autoBreakpointsEnabled: false,
-    });
-  }
-}
-
-class PausedState extends DebugSessionState {
-  constructor() {
-    super("paused", {
-      debuggingRunning: true,
-      debuggingActive: true,
-    });
-  }
-}
-
-class RunningContinueState extends DebugSessionState {
-  constructor() {
-    super("running-continue", {
-      debuggingRunning: true,
-      debuggingActive: false,
-      autoBreakpointsEnabled: false,
-    });
-  }
-}
-
-class RunningStepState extends DebugSessionState {
-  constructor() {
-    super("running-step", {
-      debuggingRunning: true,
-      debuggingActive: true,
-      autoBreakpointsEnabled: true,
-    });
-  }
-}
-
-class RunningStepOutState extends DebugSessionState {
-  constructor({ tempBreakpointId }) {
-    super("running-stepout", {
-      debuggingRunning: true,
-      debuggingActive: true,
-    });
-    this.tempBreakpointId = tempBreakpointId;
-  }
-
-  async enter(session) {
-    // Step Out uses custom breakpoint control; do not toggle auto breakpoints here.
-    session.debuggingRunning = true;
-    session.debuggingActive = true;
-    session.autoBreakpointsEnabled = false;
-  }
-
-  async onBreakpointHit(session, info) {
-    await session._enableAllBreakpointsState();
-    if (this.tempBreakpointId) {
-      session._untrackBreakpoint(this.tempBreakpointId);
-    }
-    await session._transitionTo(new PausedState());
-  }
-
-  async onPaused(session) {
-    await session._enableAllBreakpointsState();
-    if (this.tempBreakpointId) {
-      session._untrackBreakpoint(this.tempBreakpointId);
-    }
-    await session._transitionTo(new PausedState());
-  }
-}
-
-class TerminatedState extends DebugSessionState {
-  constructor() {
-    super("terminated", {
-      debuggingRunning: false,
-      debuggingActive: false,
-      autoBreakpointsEnabled: false,
-    });
-  }
-}
+const {
+  IdleState,
+  PausedState,
+  RunningContinueState,
+  RunningStepOutState,
+  RunningStepState,
+  TerminatedState,
+} = require("./states");
 
 //--------------------------------------------------
 // MSXDebugSession class
