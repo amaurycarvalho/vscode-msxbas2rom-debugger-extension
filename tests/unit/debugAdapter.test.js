@@ -354,3 +354,181 @@ test("stepOver pauses when stack does not deepen or hit user breakpoint", async 
 
   assert.equal(session.state.name, "paused");
 });
+
+test("stepIn enables breakpoints and resumes execution", async () => {
+  const session = new MSXDebugSession();
+  const calls = {
+    enableAll: 0,
+    resume: 0,
+  };
+
+  session.cmd = {
+    breakpoint: {
+      enableAll: async () => {
+        calls.enableAll += 1;
+      },
+    },
+    control: {
+      resume: () => {
+        calls.resume += 1;
+      },
+    },
+  };
+
+  session.sendResponse = () => {};
+
+  await session.stepInRequest({ body: {} }, {});
+
+  assert.equal(session.state.name, "running-step");
+  assert.equal(calls.enableAll, 1);
+  assert.equal(calls.resume, 1);
+});
+
+test("stepIn continues even when no breakpoints are defined", async () => {
+  const session = new MSXDebugSession();
+  let resumed = false;
+
+  session.cmd = {
+    control: {
+      resume: () => {
+        resumed = true;
+      },
+    },
+  };
+
+  session.sendResponse = () => {};
+
+  await session.stepInRequest({ body: {} }, {});
+
+  assert.equal(session.state.name, "running-step");
+  assert.equal(resumed, true);
+});
+
+test("continueRequest disables auto breakpoints and keeps manual/end enabled", async () => {
+  const session = new MSXDebugSession();
+  const calls = {
+    disableAll: 0,
+    enable: [],
+    resume: 0,
+  };
+
+  session.cmd = {
+    breakpoint: {
+      disableAll: async () => {
+        calls.disableAll += 1;
+      },
+      enable: async (id) => {
+        calls.enable.push(id);
+      },
+    },
+    control: {
+      resume: () => {
+        calls.resume += 1;
+      },
+    },
+  };
+
+  session.endBpId = 99;
+  session.autoBreakpointsEnabled = true;
+  session.userBreakpointIdsBySource.set("file.bas", [5, 6]);
+  session._trackBreakpoint(5, 0x1000, "user");
+  session._trackBreakpoint(6, 0x1002, "user");
+  session._trackBreakpoint(99, 0x2000, "end");
+
+  session.sendResponse = () => {};
+
+  await session.continueRequest({ body: {} }, {});
+
+  assert.equal(session.state.name, "running-continue");
+  assert.equal(calls.disableAll, 1);
+  assert.equal(calls.resume, 1);
+  assert.deepEqual(calls.enable.sort(), [5, 6, 99].sort());
+});
+
+test("continueRequest enables only end breakpoint when no manual breakpoints", async () => {
+  const session = new MSXDebugSession();
+  const calls = {
+    disableAll: 0,
+    enable: [],
+    resume: 0,
+  };
+
+  session.cmd = {
+    breakpoint: {
+      disableAll: async () => {
+        calls.disableAll += 1;
+      },
+      enable: async (id) => {
+        calls.enable.push(id);
+      },
+    },
+    control: {
+      resume: () => {
+        calls.resume += 1;
+      },
+    },
+  };
+
+  session.endBpId = 42;
+  session.autoBreakpointsEnabled = true;
+  session._trackBreakpoint(42, 0x3000, "end");
+  session.sendResponse = () => {};
+
+  await session.continueRequest({ body: {} }, {});
+
+  assert.equal(calls.disableAll, 1);
+  assert.equal(calls.resume, 1);
+  assert.deepEqual(calls.enable, [42]);
+});
+
+test("pauseRequest enables auto breakpoints and resumes", async () => {
+  const session = new MSXDebugSession();
+  const calls = {
+    enableAll: 0,
+    resume: 0,
+  };
+
+  session.cmd = {
+    breakpoint: {
+      enableAll: async () => {
+        calls.enableAll += 1;
+      },
+    },
+    control: {
+      resume: () => {
+        calls.resume += 1;
+      },
+    },
+  };
+
+  session.sendResponse = () => {};
+
+  await session.pauseRequest({ body: {} }, {});
+
+  assert.equal(session.state.name, "running-step");
+  assert.equal(calls.enableAll, 1);
+  assert.equal(calls.resume, 1);
+});
+
+test("disconnectRequest stops emulator and terminates session", async () => {
+  const session = new MSXDebugSession();
+  const events = [];
+  let stopped = false;
+
+  session.msx = {
+    stop: () => {
+      stopped = true;
+    },
+  };
+  session.sendEvent = (evt) => events.push(evt);
+  session.sendResponse = () => {};
+
+  session.disconnectRequest({ body: {} }, {});
+
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(stopped, true);
+  assert.equal(session.state.name, "terminated");
+  const eventNames = events.map((e) => e.event);
+  assert.equal(eventNames.includes("terminated"), true);
+});

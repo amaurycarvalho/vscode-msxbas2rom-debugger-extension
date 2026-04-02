@@ -131,3 +131,75 @@ test("maybePromptInitialize prompts only once per workspace", async () => {
 
   assert.equal(promptCount, 1);
 });
+
+test("restart debugging when endProgram accepted", async () => {
+  const calls = {
+    stop: 0,
+    start: 0,
+  };
+
+  vscode.window.showInformationMessage = async () => "OK";
+  vscode.debug.stopDebugging = async () => {
+    calls.stop += 1;
+  };
+  vscode.debug.startDebugging = async () => {
+    calls.start += 1;
+  };
+
+  let trackerFactory = null;
+  vscode.debug.registerDebugAdapterTrackerFactory = (type, factory) => {
+    trackerFactory = factory;
+    return { dispose() {} };
+  };
+
+  const context = { extensionPath: "/tmp/ext", subscriptions: [] };
+  extension.activate(context);
+
+  const session = {
+    workspaceFolder: { uri: { fsPath: "/tmp/ws" } },
+    configuration: { name: "test" },
+  };
+
+  const tracker = trackerFactory.createDebugAdapterTracker(session);
+
+  await tracker.onDidSendMessage({ event: "endProgram", body: {} });
+
+  assert.equal(calls.stop, 1);
+  assert.equal(calls.start, 1);
+});
+
+test("stop debugging when endProgram declined", async () => {
+  const calls = {
+    stop: 0,
+    start: 0,
+  };
+
+  vscode.window.showInformationMessage = async () => undefined;
+  vscode.debug.stopDebugging = async () => {
+    calls.stop += 1;
+  };
+  vscode.debug.startDebugging = async () => {
+    calls.start += 1;
+  };
+
+  let trackerFactory = null;
+  vscode.debug.registerDebugAdapterTrackerFactory = (type, factory) => {
+    trackerFactory = factory;
+    return { dispose() {} };
+  };
+
+  const context = { extensionPath: "/tmp/ext", subscriptions: [] };
+  extension.activate(context);
+
+  const session = {
+    workspaceFolder: { uri: { fsPath: "/tmp/ws" } },
+    configuration: { name: "test" },
+  };
+
+  const tracker = trackerFactory.createDebugAdapterTracker(session);
+
+  await tracker.onDidSendMessage({ event: "endProgram", body: {} });
+
+  assert.equal(calls.stop, 1);
+  assert.equal(calls.start, 0);
+});

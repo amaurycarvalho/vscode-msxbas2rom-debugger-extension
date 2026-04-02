@@ -42,6 +42,7 @@ const window = {
 const workspace = {
   workspaceFolders: [],
   getConfiguration: () => ({ get: () => false }),
+  onDidChangeConfiguration: () => new Disposable(),
   onDidOpenTextDocument: () => new Disposable(),
   onDidChangeWorkspaceFolders: () => new Disposable(),
   findFiles: async () => [],
@@ -73,4 +74,3 @@ module.exports = {
   SemanticTokensLegend,
   SemanticTokensBuilder,
 };
-
