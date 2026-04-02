@@ -107,6 +107,14 @@ function activate(context) {
   );
   context.subscriptions.push(openCrashLogCmd);
 
+  const openSettingsCmd = vscode.commands.registerCommand(
+    "msx.configure",
+    () => {
+      vscode.commands.executeCommand("workbench.action.openSettings", "msxDebugger");
+    },
+  );
+  context.subscriptions.push(openSettingsCmd);
+
   //--------------------------------------------------
   // Semantic tokens provider registration
   //--------------------------------------------------

@@ -24,6 +24,7 @@
     "onCommand:msx.initializeProject",
     "onCommand:msx.openDebugLog",
     "onCommand:msx.openCrashLog",
+    "onCommand:msx.configure",
     "onLanguage:msx-basic"
   ],
   "main": "./src/application/extension/extension.js",
@@ -110,6 +111,10 @@
       {
         "command": "msx.openCrashLog",
         "title": "MSXBAS2ROM: Open Crash Log"
+      },
+      {
+        "command": "msx.configure",
+        "title": "MSXBAS2ROM: Configure"
       }
     ],
     "breakpoints": [
