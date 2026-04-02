@@ -5,6 +5,7 @@ const EnableAllBreakpointsCommand = require("../../domain/commands/breakpoint/en
 const DisableAllBreakpointsCommand = require("../../domain/commands/breakpoint/disableAll");
 const EnableBreakpointCommand = require("../../domain/commands/breakpoint/enable");
 const DisableBreakpointCommand = require("../../domain/commands/breakpoint/disable");
+const CreateOnceBreakpointCommand = require("../../domain/commands/breakpoint/createOnce");
 const InitializeControlCommand = require("../../domain/commands/control/initialize");
 const PauseControlCommand = require("../../domain/commands/control/pause");
 const ResumeControlCommand = require("../../domain/commands/control/resume");
@@ -47,6 +48,9 @@ class BreakpointDebugService {
   }
   async remove(id) {
     return await this.msx.execute(new RemoveBreakpointCommand(id));
+  }
+  async createOnce(a) {
+    return await this.msx.execute(new CreateOnceBreakpointCommand(a));
   }
   async getCurrent() {
     return await this.msx.execute(this.getCurrentBreakpointCommand);

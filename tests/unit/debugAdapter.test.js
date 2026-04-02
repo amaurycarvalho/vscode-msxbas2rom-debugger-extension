@@ -195,3 +195,104 @@ test("variablesRequest expands pstring and float24 arrays", async () => {
   const floatValues = responses[0].body.variables.map((v) => v.value);
   assert.deepEqual(floatValues, ["3.142", "3.142"]);
 });
+
+test("stepOutRequest continues when at root scope", async () => {
+  const session = new MSXDebugSession();
+  let continued = false;
+  session._buildStackFrames = async () => [{}];
+  session.continueRequest = async () => {
+    continued = true;
+  };
+
+  await session.stepOutRequest({ body: {} }, {});
+
+  assert.equal(continued, true);
+});
+
+test("stepOutRequest enables existing return breakpoint and then enables all", async () => {
+  const session = new MSXDebugSession();
+  const calls = {
+    disableAll: 0,
+    enable: [],
+    enableAll: 0,
+    resume: 0,
+  };
+
+  session._buildStackFrames = async () => [{}, {}];
+  session.cmd = {
+    register: { get: async () => 0x2000 },
+    memory: { peek16: async () => 0x1234 },
+    breakpoint: {
+      disableAll: async () => {
+        calls.disableAll += 1;
+      },
+      enable: async (id) => {
+        calls.enable.push(id);
+      },
+      createOnce: async () => 99,
+      enableAll: async () => {
+        calls.enableAll += 1;
+      },
+    },
+    control: {
+      resume: () => {
+        calls.resume += 1;
+      },
+    },
+  };
+
+  session._trackBreakpoint(10, 0x1234, "user");
+  session.sendResponse = () => {};
+
+  await session.stepOutRequest({ body: {} }, {});
+
+  assert.equal(calls.disableAll, 1);
+  assert.deepEqual(calls.enable, [10]);
+  assert.equal(calls.resume, 1);
+
+  await session.state.onBreakpointHit(session, {});
+
+  assert.equal(calls.enableAll, 1);
+  assert.equal(session.breakpointStateById.get(10).enabled, true);
+});
+
+test("stepOutRequest creates temp breakpoint and removes it after hit", async () => {
+  const session = new MSXDebugSession();
+  const calls = {
+    disableAll: 0,
+    enableAll: 0,
+    resume: 0,
+  };
+
+  session._buildStackFrames = async () => [{}, {}];
+  session.cmd = {
+    register: { get: async () => 0x2000 },
+    memory: { peek16: async () => 0x5555 },
+    breakpoint: {
+      disableAll: async () => {
+        calls.disableAll += 1;
+      },
+      enable: async () => {},
+      createOnce: async () => 77,
+      enableAll: async () => {
+        calls.enableAll += 1;
+      },
+    },
+    control: {
+      resume: () => {
+        calls.resume += 1;
+      },
+    },
+  };
+
+  session.sendResponse = () => {};
+
+  await session.stepOutRequest({ body: {} }, {});
+
+  assert.equal(session.breakpointStateById.has(77), true);
+
+  await session.state.onBreakpointHit(session, {});
+
+  assert.equal(calls.enableAll, 1);
+  assert.equal(session.breakpointStateById.has(77), false);
+});

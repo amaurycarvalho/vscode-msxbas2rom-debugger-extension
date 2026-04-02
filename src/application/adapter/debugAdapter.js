@@ -29,6 +29,129 @@ const path = require("path");
 const logger = new Logger("debugAdapter");
 
 //--------------------------------------------------
+// Debug session states
+//--------------------------------------------------
+
+class DebugSessionState {
+  constructor(name, flags = {}) {
+    this.name = name;
+    this.flags = flags;
+  }
+
+  async enter(session) {
+    await this._applyFlags(session);
+  }
+
+  async exit(session) {}
+
+  async _applyFlags(session) {
+    if ("debuggingRunning" in this.flags) {
+      session.debuggingRunning = this.flags.debuggingRunning;
+    }
+    if ("debuggingActive" in this.flags) {
+      session.debuggingActive = this.flags.debuggingActive;
+    }
+    if ("autoBreakpointsEnabled" in this.flags) {
+      await session._setAutoBreakpointsEnabled(this.flags.autoBreakpointsEnabled);
+    }
+  }
+
+  async onBreakpointHit(session, info) {
+    await session._transitionTo(new PausedState());
+  }
+
+  async onPaused(session) {
+    await session._transitionTo(new PausedState());
+  }
+
+  async onEndProgram(session) {
+    await session._transitionTo(new TerminatedState());
+  }
+}
+
+class IdleState extends DebugSessionState {
+  constructor() {
+    super("idle", {
+      debuggingRunning: false,
+      debuggingActive: false,
+      autoBreakpointsEnabled: false,
+    });
+  }
+}
+
+class PausedState extends DebugSessionState {
+  constructor() {
+    super("paused", {
+      debuggingRunning: true,
+      debuggingActive: true,
+    });
+  }
+}
+
+class RunningContinueState extends DebugSessionState {
+  constructor() {
+    super("running-continue", {
+      debuggingRunning: true,
+      debuggingActive: false,
+      autoBreakpointsEnabled: false,
+    });
+  }
+}
+
+class RunningStepState extends DebugSessionState {
+  constructor() {
+    super("running-step", {
+      debuggingRunning: true,
+      debuggingActive: true,
+      autoBreakpointsEnabled: true,
+    });
+  }
+}
+
+class RunningStepOutState extends DebugSessionState {
+  constructor({ tempBreakpointId }) {
+    super("running-stepout", {
+      debuggingRunning: true,
+      debuggingActive: true,
+    });
+    this.tempBreakpointId = tempBreakpointId;
+  }
+
+  async enter(session) {
+    // Step Out uses custom breakpoint control; do not toggle auto breakpoints here.
+    session.debuggingRunning = true;
+    session.debuggingActive = true;
+    session.autoBreakpointsEnabled = false;
+  }
+
+  async onBreakpointHit(session, info) {
+    await session._enableAllBreakpointsState();
+    if (this.tempBreakpointId) {
+      session._untrackBreakpoint(this.tempBreakpointId);
+    }
+    await session._transitionTo(new PausedState());
+  }
+
+  async onPaused(session) {
+    await session._enableAllBreakpointsState();
+    if (this.tempBreakpointId) {
+      session._untrackBreakpoint(this.tempBreakpointId);
+    }
+    await session._transitionTo(new PausedState());
+  }
+}
+
+class TerminatedState extends DebugSessionState {
+  constructor() {
+    super("terminated", {
+      debuggingRunning: false,
+      debuggingActive: false,
+      autoBreakpointsEnabled: false,
+    });
+  }
+}
+
+//--------------------------------------------------
 // MSXDebugSession class
 //--------------------------------------------------
 
@@ -46,12 +169,15 @@ class MSXDebugSession extends DebugSession {
     this.debuggingActive = false;
     this.autoBreakpointsEnabled = false;
     this.debuggingRunning = false;
+    this.state = new IdleState();
 
     this.userBreakpointIdsBySource = new Map(); // source -> [id]
     this.userBreakpointsBySource = new Map(); // source -> Set(line)
     this.autoBreakpointIds = new Set(); // ids created at launch for all LIN_*
 
     this.emuBreakpointInfo = new Map(); // id -> { kind, source, line, basicLine }
+    this.breakpointStateById = new Map(); // id -> { address, enabled, kind }
+    this.breakpointIdByAddress = new Map(); // address -> id
 
     this.sourceHandles = new Handles();
     this.variableHandles = new Handles();
@@ -93,6 +219,17 @@ class MSXDebugSession extends DebugSession {
       };
     }
     return super.dispatchRequest(request);
+  }
+
+  async _transitionTo(state) {
+    if (this.state && this.state.name === state.name) return;
+    if (this.state && this.state.exit) {
+      await this.state.exit(this);
+    }
+    this.state = state;
+    if (this.state && this.state.enter) {
+      await this.state.enter(this);
+    }
   }
 
   //--------------------------------------------------
@@ -232,22 +369,26 @@ class MSXDebugSession extends DebugSession {
       const id = await this.cmd.breakpoint.set(addr);
 
       this.autoBreakpointIds.add(id);
+      this._trackBreakpoint(id, addr, "auto-line");
       this.emuBreakpointInfo.set(id, {
         kind: "auto-line",
         source: this.program,
         line: editorLine,
         basicLine,
+        address: addr,
       });
     }
 
     const endAddr = this.cdb.getEndProgramAddress();
     if (endAddr !== null && endAddr !== undefined) {
       this.endBpId = await this.cmd.breakpoint.set(endAddr);
+      this._trackBreakpoint(this.endBpId, endAddr, "end");
       this.emuBreakpointInfo.set(this.endBpId, {
         kind: "end",
         source: this.program,
         line: null,
         basicLine: null,
+        address: endAddr,
       });
     } else {
       logger.error(
@@ -256,14 +397,12 @@ class MSXDebugSession extends DebugSession {
     }
 
     // Start debugging as if Pause is active: stop at the first auto breakpoint.
-    this.debuggingActive = true;
-    await this._setAutoBreakpointsEnabled(true);
+    await this._transitionTo(new RunningStepState());
 
     // Apply any user breakpoints that were configured before launch.
     await this._applyUserBreakpoints();
 
     logger.debug("Debugging is running");
-    this.debuggingRunning = true;
 
     //--------------------------------------------------
     // openMSX events
@@ -318,9 +457,6 @@ class MSXDebugSession extends DebugSession {
         this.cachedStackFrames = null;
       }
 
-      // Ensure stack/visuals update when stopped at a breakpoint.
-      this.debuggingActive = true;
-
       if (
         this.startDebuggingSP === null ||
         this.startDebuggingSP === undefined
@@ -337,6 +473,9 @@ class MSXDebugSession extends DebugSession {
 
       this.sendEvent(new StoppedEvent("breakpoint", this.threadId));
       //this.sendEvent(new InvalidatedEvent(["variables"]));
+      if (this.state && this.state.onBreakpointHit) {
+        await this.state.onBreakpointHit(this, { id, addr, meta, line, source });
+      }
     });
 
     this.msx.on("paused", async () => {
@@ -344,8 +483,6 @@ class MSXDebugSession extends DebugSession {
       // If a breakpoint just hit, keep the breakpoint stop reason/line.
       const sinceHitMs = Date.now() - this.lastBreakpointHitAt;
       if (sinceHitMs < 100) return;
-
-      this.debuggingActive = true;
 
       if (
         this.startDebuggingSP === null ||
@@ -363,6 +500,9 @@ class MSXDebugSession extends DebugSession {
 
       this.sendEvent(new StoppedEvent("pause", this.threadId));
       //this.sendEvent(new InvalidatedEvent(["variables"]));
+      if (this.state && this.state.onPaused) {
+        await this.state.onPaused(this);
+      }
     });
 
     this.msx.on("endProgram", async (info) => {
@@ -395,7 +535,7 @@ class MSXDebugSession extends DebugSession {
     const existingIds = this.userBreakpointIdsBySource.get(source) || [];
     for (const id of existingIds) {
       if (this.cmd !== null) await this.cmd.breakpoint.remove(id);
-      this.emuBreakpointInfo.delete(id);
+      this._untrackBreakpoint(id);
     }
 
     this.userBreakpointIdsBySource.set(source, []);
@@ -417,11 +557,13 @@ class MSXDebugSession extends DebugSession {
 
         if (id !== null && id !== undefined) {
           this.userBreakpointIdsBySource.get(source).push(id);
+          this._trackBreakpoint(id, addr, "user");
           this.emuBreakpointInfo.set(id, {
             kind: "user",
             source,
             line: editorLine,
             basicLine,
+            address: addr,
           });
         }
 
@@ -796,8 +938,7 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   async continueRequest(response, args) {
-    this.debuggingActive = false;
-    await this._setAutoBreakpointsEnabled(false);
+    await this._transitionTo(new RunningContinueState());
     this.cmd.control.resume();
 
     this.sendResponse(response);
@@ -808,21 +949,56 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   async nextRequest(response, args) {
-    this.debuggingActive = true;
-    await this._setAutoBreakpointsEnabled(true);
+    await this._transitionTo(new RunningStepState());
     this.cmd.control.resume();
 
     this.sendResponse(response);
   }
 
   async stepInRequest(response, args) {
-    this.debuggingActive = true;
     await this.nextRequest(response, args);
   }
 
   async stepOutRequest(response, args) {
-    this.debuggingActive = true;
-    await this.nextRequest(response, args);
+    const frames = await this._buildStackFrames();
+    if (!frames || frames.length <= 1) {
+      await this.continueRequest(response, args);
+      return;
+    }
+
+    if (this.cmd) {
+      await this.cmd.breakpoint.disableAll();
+      for (const id of this.breakpointStateById.keys()) {
+        this._setBreakpointEnabledState(id, false);
+      }
+    }
+
+    let sp = null;
+    try {
+      sp = await this.cmd.register.get("SP");
+    } catch (err) {
+      logger.error(`Failed to read SP for Step Out: ${err}`);
+      this.sendResponse(response);
+      return;
+    }
+
+    const returnAddr = await this.cmd.memory.peek16(sp);
+
+    const existingId = this.breakpointIdByAddress.get(returnAddr) ?? null;
+    let tempId = null;
+
+    if (existingId !== null) {
+      await this.cmd.breakpoint.enable(existingId);
+      this._setBreakpointEnabledState(existingId, true);
+    } else {
+      tempId = await this.cmd.breakpoint.createOnce(returnAddr);
+      this._trackBreakpoint(tempId, returnAddr, "temp-stepout");
+    }
+
+    await this._transitionTo(new RunningStepOutState({ tempBreakpointId: tempId }));
+    this.cmd.control.resume();
+
+    this.sendResponse(response);
   }
 
   //--------------------------------------------------
@@ -830,9 +1006,7 @@ class MSXDebugSession extends DebugSession {
   //--------------------------------------------------
 
   async pauseRequest(response, args) {
-    await this._setAutoBreakpointsEnabled(true);
-
-    this.debuggingActive = true;
+    await this._transitionTo(new RunningStepState());
 
     this.sendResponse(response);
 
@@ -846,6 +1020,10 @@ class MSXDebugSession extends DebugSession {
   disconnectRequest(response, args) {
     if (this.msx) this.msx.stop();
 
+    this._transitionTo(new TerminatedState()).catch((err) => {
+      logger.error(`Failed to transition to terminated: ${err}`);
+    });
+
     this.sendResponse(response);
 
     this.sendEvent(new TerminatedEvent());
@@ -853,6 +1031,42 @@ class MSXDebugSession extends DebugSession {
 
   async showModal(msg) {
     this.sendEvent(new OutputEvent(`${msg}\n`));
+  }
+
+  _trackBreakpoint(id, address, kind) {
+    if (id === null || id === undefined) return;
+    if (address === null || address === undefined) return;
+    this.breakpointStateById.set(id, {
+      address,
+      enabled: true,
+      kind,
+    });
+    this.breakpointIdByAddress.set(address, id);
+  }
+
+  _untrackBreakpoint(id) {
+    if (id === null || id === undefined) return;
+    const info = this.breakpointStateById.get(id);
+    if (info && info.address !== null && info.address !== undefined) {
+      this.breakpointIdByAddress.delete(info.address);
+    }
+    this.breakpointStateById.delete(id);
+    this.emuBreakpointInfo.delete(id);
+  }
+
+  _setBreakpointEnabledState(id, enabled) {
+    const info = this.breakpointStateById.get(id);
+    if (!info) return;
+    info.enabled = enabled;
+  }
+
+  async _enableAllBreakpointsState() {
+    if (!this.cmd) return;
+    await this.cmd.breakpoint.enableAll();
+    this.autoBreakpointsEnabled = true;
+    for (const id of this.breakpointStateById.keys()) {
+      this._setBreakpointEnabledState(id, true);
+    }
   }
 
   _hasUserBreakpoint(source, line) {
@@ -865,7 +1079,7 @@ class MSXDebugSession extends DebugSession {
 
   async _handleEndProgram() {
     logger.info(`End of the user program`);
-    this.debuggingRunning = false;
+    await this._transitionTo(new TerminatedState());
 
     this.sendEvent(new StoppedEvent("pause", this.threadId));
     this.sendEvent(
@@ -880,17 +1094,31 @@ class MSXDebugSession extends DebugSession {
     this.autoBreakpointsEnabled = enabled;
 
     if (!this.cmd) return;
-    if (enabled) await this.cmd.breakpoint.enableAll();
-    else {
-      await this.cmd.breakpoint.disableAll();
-
-      // After global enable/disable, toggle only manual breakpoints individually.
-      for (const ids of this.userBreakpointIdsBySource.values()) {
-        for (const id of ids) await this.cmd.breakpoint.enable(id);
+    if (enabled) {
+      await this.cmd.breakpoint.enableAll();
+      for (const id of this.breakpointStateById.keys()) {
+        this._setBreakpointEnabledState(id, true);
       }
+      return;
+    }
 
-      // Keep end-program breakpoint active even when auto-line breakpoints are off
-      if (this.endBpId) await this.cmd.breakpoint.enable(this.endBpId);
+    await this.cmd.breakpoint.disableAll();
+    for (const id of this.breakpointStateById.keys()) {
+      this._setBreakpointEnabledState(id, false);
+    }
+
+    // After global enable/disable, toggle only manual breakpoints individually.
+    for (const ids of this.userBreakpointIdsBySource.values()) {
+      for (const id of ids) {
+        await this.cmd.breakpoint.enable(id);
+        this._setBreakpointEnabledState(id, true);
+      }
+    }
+
+    // Keep end-program breakpoint active even when auto-line breakpoints are off
+    if (this.endBpId) {
+      await this.cmd.breakpoint.enable(this.endBpId);
+      this._setBreakpointEnabledState(this.endBpId, true);
     }
   }
 
@@ -903,7 +1131,7 @@ class MSXDebugSession extends DebugSession {
       const existingIds = this.userBreakpointIdsBySource.get(source) || [];
       for (const id of existingIds) {
         await this.cmd.breakpoint.remove(id);
-        this.emuBreakpointInfo.delete(id);
+        this._untrackBreakpoint(id);
       }
 
       this.userBreakpointIdsBySource.set(source, []);
@@ -918,11 +1146,13 @@ class MSXDebugSession extends DebugSession {
         if (id === null || id === undefined) continue;
 
         this.userBreakpointIdsBySource.get(source).push(id);
+        this._trackBreakpoint(id, addr, "user");
         this.emuBreakpointInfo.set(id, {
           kind: "user",
           source,
           line: editorLine,
           basicLine,
+          address: addr,
         });
 
         // Notify VSCode that this breakpoint is now verified.
