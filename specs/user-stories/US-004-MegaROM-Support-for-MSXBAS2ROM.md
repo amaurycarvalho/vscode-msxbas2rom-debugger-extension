@@ -9,6 +9,7 @@ As an MSX-BASIC developer, I want the debugger to support MegaROM builds produce
 - MegaROM images can be launched by the VSCode debug session using openMSX.
 - The debugger can attach to a running MegaROM program.
 - Source-level debugging remains functional when MegaROM bank switching occurs.
+- Plain ROM images debugging continue to function as before and are not affected by the new MegaROM support code.
 
 ## BDD Scenarios
 
