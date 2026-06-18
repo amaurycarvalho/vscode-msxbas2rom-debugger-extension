@@ -2,13 +2,13 @@
 
 - [x] 1.1 Copy constitution.md, glossary.md, and ADR-001 content into openspec/specs/project-constitution/spec.md
 - [x] 1.2 Integrate insights.md discoveries into the appropriate openspec specs
-- [ ] 1.3 Validate all governance specs with `openspec validate`
+- [x] 1.3 Validate all governance specs with `openspec validate`
 
 ## 2. Register Debug Engine Specs
 
 - [x] 2.1 Translate US-001 (breakpoints + stepping) and all execution controls (US-003.1 through 003.7) into openspec/specs/debug-engine/spec.md
 - [x] 2.2 Ensure all TCL commands and BDD scenarios from the original user stories are preserved
-- [ ] 2.3 Verify all 29 BDD scenarios (US-001: 2, US-003.1: 2, US-003.2: 2, US-003.3: 2, US-003.4: 2, US-003.5: 8, US-003.6: 7, US-003.7: 6) are present in the spec
+- [x] 2.3 Verify all BDD scenarios are present in the spec — 34 scenarios total (US-001: 2, US-003.1: 2, US-003.2: 2, US-003.3: 2, US-003.4: 2, US-003.5: 8, US-003.6: 7, US-003.7: 6, plus TCL + breakpoint pre-launch scenarios)
 
 ## 3. Register Variable Inspection Specs
 
@@ -18,7 +18,7 @@
 ## 4. Register Stack Trace Specs
 
 - [x] 4.1 Translate US-003 (stack trace) into openspec/specs/stack-trace/spec.md
-- [ ] 4.2 Verify stack reconstruction algorithm (init + pause procedures) is fully documented
+- [x] 4.2 Verify stack reconstruction algorithm (init + pause procedures) is fully documented
 
 ## 5. Create Pending Change Proposals
 
@@ -34,8 +34,8 @@
 
 ## 7. Validation and Cleanup
 
-- [ ] 7.1 Run `openspec validate` on all specs and changes
-- [ ] 7.2 Review `old-specs-proposal.md` and decide on disposition of old `specs/` folder
-- [ ] 7.3 If removing old specs/: verify no scripts or docs reference `specs/` paths
-- [ ] 7.4 If removing old specs/: execute `git rm -r specs/` and commit
-- [ ] 7.5 If removing old specs/: update `AGENTS.md` to reference `openspec/specs/`
+- [x] 7.1 Run `openspec validate` on all specs and changes
+- [x] 7.2 Review `old-specs-proposal.md` and decide on disposition of old `specs/` folder
+- [x] 7.3 Verify no external scripts or docs reference old `specs/` paths (only AGENTS.md and internal specs/constitution.md cross-refs found)
+- [x] 7.4 Remove old `specs/` directory: `git rm -r specs/`
+- [x] 7.5 Update `AGENTS.md` to reference `openspec/` instead of old `specs/`
