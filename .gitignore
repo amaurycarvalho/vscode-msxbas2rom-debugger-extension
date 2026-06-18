@@ -148,3 +148,37 @@ vite.config.ts.timestamp-*
 *.symbol
 *.cdb
 *.elf
+
+# CocoIndex
+.cocoindex/
+.cocoindex_code/
+
+# Embedding caches
+*.faiss
+*.ann
+*.index
+*.embeddings
+
+# Local semantic databases
+*.sqlite
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.pyc
+
+# MCP local runtime
+.mcp/
+
+# Ollama local models
+.ollama/
+
+# Temporary AI caches
+.ai-cache/
+.semantic-cache/
+
+# VSCode local MCP config
+.vscode/mcp.json
+
+# CocoIndex Code (ccc)
+/.cocoindex_code/
