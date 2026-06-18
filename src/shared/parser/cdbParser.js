@@ -5,6 +5,7 @@
 
 const fs = require("fs");
 const Logger = require("../logger/logger");
+const { parseAddress } = require("../address/addressUtils");
 
 const logger = new Logger("cdbParser");
 
@@ -28,8 +29,10 @@ class CDBParser {
   constructor(path) {
     this.path = path;
 
-    this.lines = {}; // BASIC line -> address
+    this.lines = {}; // BASIC line -> address (offset)
+    this.lineSegments = {}; // BASIC line -> segment (for MegaROM)
     this.endProgramAddress = null;
+    this.endProgramSegment = null;
     this.variables = {}; // symbol -> {address,type,name,arrayInfo,raw}
     this.symbols = {}; // raw symbols
     this.types = {}; // type definitions
@@ -143,13 +146,18 @@ class CDBParser {
         const symbol = this._normalizeSymbol(symbolRaw);
         const addrHex = parts[2];
 
-        const addr = parseInt(addrHex, 16);
+        const { segment, offset } = parseAddress(addrHex);
+        const addr = offset;
 
         if (!this.symbols[symbol]) continue;
 
         this.symbols[symbol].address = addr;
+        this.symbols[symbol].segment = segment;
 
-        logger.debug(`Address: ${symbol} -> 0x${addr.toString(16)}`);
+        logger.debug(
+          `Address: ${symbol} -> 0x${addr.toString(16)}` +
+            (segment !== null ? ` (segment 0x${segment.toString(16)})` : ""),
+        );
 
         //----------------------------------
         // Program start and end
@@ -158,6 +166,7 @@ class CDBParser {
         if (symbol.startsWith("G$END_STMT")) {
           // @remarks discard the 'jr' instruction at the beggining of end statement Z80 code
           this.endProgramAddress = addr + 2;
+          this.endProgramSegment = segment;
         }
 
         //----------------------------------
@@ -171,8 +180,14 @@ class CDBParser {
             const lineNumber = parseInt(match[1]);
 
             this.lines[lineNumber] = addr;
+            this.lineSegments[lineNumber] = segment;
 
-            logger.debug(`BASIC line ${lineNumber} -> 0x${addr.toString(16)}`);
+            logger.debug(
+              `BASIC line ${lineNumber} -> 0x${addr.toString(16)}` +
+                (segment !== null
+                  ? ` (segment 0x${segment.toString(16)})`
+                  : ""),
+            );
           }
         }
 
@@ -320,6 +335,20 @@ class CDBParser {
     logger.debug(`getEndProgramAddress() -> ${this.endProgramAddress}`);
 
     return this.endProgramAddress;
+  }
+
+  getSegmentForLine(line) {
+    const segment = this.lineSegments[line] || null;
+
+    logger.debug(`getSegmentForLine(${line}) -> ${segment}`);
+
+    return segment;
+  }
+
+  getEndProgramSegment() {
+    logger.debug(`getEndProgramSegment() -> ${this.endProgramSegment}`);
+
+    return this.endProgramSegment;
   }
 }
 

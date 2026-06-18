@@ -81,6 +81,57 @@ test("getVariables disambiguates duplicated names", () => {
   assert.ok(vars["D#2"]);
 });
 
+test("parses 6-digit MegaROM addresses with segment", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-"));
+  const filePath = path.join(tmpDir, "mega.cdb");
+
+  const content = [
+    "S:G$LIN_10",
+    "L:G$LIN_10:028490",
+    "S:G$LIN_20",
+    "L:G$LIN_20:03A000",
+    "S:G$END_STMT",
+    "L:G$END_STMT:0FFFFF",
+    "S:G$VAR_A%SI",
+    "L:G$VAR_A%SI:00C038",
+  ].join("\n");
+
+  fs.writeFileSync(filePath, content, "utf8");
+
+  const parser = new CDBParser(filePath);
+
+  assert.equal(parser.getAddressForLine(10), 0x8490);
+  assert.equal(parser.getSegmentForLine(10), 0x02);
+  assert.equal(parser.getAddressForLine(20), 0xA000);
+  assert.equal(parser.getSegmentForLine(20), 0x03);
+
+  assert.equal(parser.getEndProgramAddress(), 0xFFFF + 2);
+  assert.equal(parser.getEndProgramSegment(), 0x0F);
+
+  const vars = parser.getVariables();
+  assert.equal(vars["A%SI"].address, 0xC038);
+});
+
+test("parses 4-digit plain ROM addresses with null segment", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-"));
+  const filePath = path.join(tmpDir, "plain.cdb");
+
+  const content = [
+    "S:G$LIN_10",
+    "L:G$LIN_10:0100",
+    "S:G$END_STMT",
+    "L:G$END_STMT:0FFF",
+  ].join("\n");
+
+  fs.writeFileSync(filePath, content, "utf8");
+
+  const parser = new CDBParser(filePath);
+
+  assert.equal(parser.getAddressForLine(10), 0x100);
+  assert.equal(parser.getSegmentForLine(10), null);
+  assert.equal(parser.getEndProgramSegment(), null);
+});
+
 test("parses integer array metadata", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-"));
   const filePath = path.join(tmpDir, "array.cdb");

@@ -2,6 +2,10 @@
 
 MSXBAS2ROM can compile MSX-BASIC programs larger than 32KB into MegaROM images using bank switching (ASCII8, KonamiSCC formats). The current debugger only supports plain ROM images. Adding MegaROM support enables debugging of larger, real-world MSX-BASIC projects.
 
+## Release
+
+This change targets **v0.4.0**.
+
 ## What Changes
 
 - Detect MegaROM format from ROM filename suffix (e.g., `[ASCII8]`, `[KonamiSCC]`)

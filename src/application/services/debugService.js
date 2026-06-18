@@ -61,14 +61,14 @@ class BreakpointDebugService {
     const raw = await this.msx.send(command.toTCL());
     return command.parse(raw);
   }
-  async set(a) {
-    return await this._execute(new SetBreakpointCommand(a));
+  async set(a, segment) {
+    return await this._execute(new SetBreakpointCommand(a, segment));
   }
   async remove(id) {
     return await this._execute(new RemoveBreakpointCommand(id));
   }
-  async createOnce(a) {
-    return await this._execute(new CreateOnceBreakpointCommand(a));
+  async createOnce(a, segment) {
+    return await this._execute(new CreateOnceBreakpointCommand(a, segment));
   }
   async getCurrent() {
     return await this._execute(this.getCurrentBreakpointCommand);

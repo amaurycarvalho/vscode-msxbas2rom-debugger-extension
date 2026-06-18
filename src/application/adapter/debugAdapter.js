@@ -23,6 +23,7 @@ const VariableDecoder = require("../../shared/decoder/variableDecoder");
 const Logger = require("../../shared/logger/logger");
 const CrashSidecar = require("../../shared/error/crashSidecar");
 const DebugEvent = require("../../domain/events/debugEvent");
+const { detectMegaRomFormat } = require("../../shared/address/addressUtils");
 
 const fs = require("fs");
 const path = require("path");
@@ -71,6 +72,9 @@ class MSXDebugSession extends DebugSession {
     this.sourceHandles = new Handles();
     this.variableHandles = new Handles();
     this.variablesRoot = this.variableHandles.create({ kind: "root" });
+
+    this.isMegaRom = false;
+    this.megaRomFormat = null;
 
     this.startDebuggingSP = null;
     this.lastPausedSP = null;
@@ -181,6 +185,10 @@ class MSXDebugSession extends DebugSession {
     const romPath = path.resolve(workspace, args.rom);
     const cdbPath = path.resolve(workspace, args.cdb);
 
+    const romBasename = path.basename(romPath);
+    this.megaRomFormat = detectMegaRomFormat(romBasename);
+    this.isMegaRom = this.megaRomFormat !== null;
+
     const enableDebugLogs = args.enableDebugLogs;
     const debugEnabled = enableDebugLogs === true || enableDebugLogs === "true";
     const verboseEnabled =
@@ -197,6 +205,9 @@ class MSXDebugSession extends DebugSession {
 
     logger.info("ROM: " + romPath);
     logger.info("CDB: " + cdbPath);
+    if (this.isMegaRom) {
+      logger.info("MegaROM format detected: " + this.megaRomFormat);
+    }
 
     const openmsxPath = args.openmsxPath || "openmsx";
 
@@ -274,9 +285,10 @@ class MSXDebugSession extends DebugSession {
     for (const basicLineStr of Object.keys(cdbLines)) {
       const basicLine = parseInt(basicLineStr, 10);
       const addr = cdbLines[basicLineStr];
+      const segment = this.cdb.getSegmentForLine(basicLine);
 
       const editorLine = editorLineByBasicLine[basicLine] || null;
-      const id = await this.cmd.breakpoint.set(addr);
+      const id = await this.cmd.breakpoint.set(addr, segment);
 
       this.autoBreakpointIds.add(id);
       this._trackBreakpoint(id, addr, "auto-line");
@@ -290,8 +302,9 @@ class MSXDebugSession extends DebugSession {
     }
 
     const endAddr = this.cdb.getEndProgramAddress();
+    const endSegment = this.cdb.getEndProgramSegment();
     if (endAddr !== null && endAddr !== undefined) {
-      this.endBpId = await this.cmd.breakpoint.set(endAddr);
+      this.endBpId = await this.cmd.breakpoint.set(endAddr, endSegment);
       this._trackBreakpoint(this.endBpId, endAddr, "end");
       this.emuBreakpointInfo.set(this.endBpId, {
         kind: "end",
@@ -330,6 +343,15 @@ class MSXDebugSession extends DebugSession {
       if (meta && meta.kind === "end") {
         this._handleEndProgram();
         return;
+      }
+
+      if (this.isMegaRom) {
+        try {
+          const activeSegment = await this.cmd.memory.peek(0xC023);
+          logger.debug(`Active MegaROM segment: 0x${activeSegment.toString(16)}`);
+        } catch (err) {
+          logger.error(`Failed to read active segment: ${err}`);
+        }
       }
 
       let line = meta ? meta.line : null;
@@ -462,7 +484,12 @@ class MSXDebugSession extends DebugSession {
           : null;
 
       if (addr !== null) {
-        const id = this.cmd !== null ? await this.cmd.breakpoint.set(addr) : null;
+        const segment =
+          basicLine !== null ? this.cdb.getSegmentForLine(basicLine) : null;
+        const id =
+          this.cmd !== null
+            ? await this.cmd.breakpoint.set(addr, segment)
+            : null;
 
         if (id !== null && id !== undefined) {
           this.userBreakpointIdsBySource.get(source).push(id);
@@ -724,6 +751,7 @@ class MSXDebugSession extends DebugSession {
       let sp = currentSP;
       let depth = 0;
       const maxDepth = 60;
+      const stepSize = this.isMegaRom ? 6 : 2;
 
       while (sp < this.startDebuggingSP && depth < maxDepth) {
         try {
@@ -734,7 +762,7 @@ class MSXDebugSession extends DebugSession {
           this.cachedStackFrames = frames;
           return frames;
         }
-        sp += 2;
+        sp += stepSize;
         depth++;
       }
     }
@@ -919,6 +947,14 @@ class MSXDebugSession extends DebugSession {
     }
 
     const returnAddr = await this.cmd.memory.peek16(sp);
+    let returnSegment = null;
+    if (this.isMegaRom) {
+      try {
+        returnSegment = await this.cmd.memory.peek16(sp + 2);
+      } catch (err) {
+        logger.error(`Failed to read segment for Step Out: ${err}`);
+      }
+    }
 
     const existingId = this.breakpointIdByAddress.get(returnAddr) ?? null;
     let tempId = null;
@@ -927,7 +963,7 @@ class MSXDebugSession extends DebugSession {
       await this.cmd.breakpoint.enable(existingId);
       this._setBreakpointEnabledState(existingId, true);
     } else {
-      tempId = await this.cmd.breakpoint.createOnce(returnAddr);
+      tempId = await this.cmd.breakpoint.createOnce(returnAddr, returnSegment);
       this._trackBreakpoint(tempId, returnAddr, "temp-stepout");
     }
 
@@ -1079,7 +1115,9 @@ class MSXDebugSession extends DebugSession {
           basicLine !== null ? this.cdb.getAddressForLine(basicLine) : null;
         if (addr === null) continue;
 
-        const id = await this.cmd.breakpoint.set(addr);
+        const segment =
+          basicLine !== null ? this.cdb.getSegmentForLine(basicLine) : null;
+        const id = await this.cmd.breakpoint.set(addr, segment);
         if (id === null || id === undefined) continue;
 
         this.userBreakpointIdsBySource.get(source).push(id);
